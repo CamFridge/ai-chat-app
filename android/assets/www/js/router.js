@@ -348,7 +348,18 @@
     return null;
   };
 
-  R.onChange = function (fn) { if (typeof fn === 'function') listeners.push(fn); return R; };
+  // 注册路由变化监听；返回取消订阅函数（页面销毁时应调用，避免长期运行后回调累积）
+  R.onChange = function (fn) {
+    if (typeof fn !== 'function') return function () {};
+    listeners.push(fn);
+    var off = false;
+    return function () {
+      if (off) return;
+      off = true;
+      var i = listeners.indexOf(fn);
+      if (i >= 0) listeners.splice(i, 1);
+    };
+  };
 
   R.goChatList = function () { return R.tab('chatList'); };
 

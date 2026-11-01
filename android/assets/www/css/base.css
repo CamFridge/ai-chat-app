@@ -87,6 +87,11 @@ html[data-theme="amoled"] {
 
 /* ------------------------------ 基础重置 ------------------------------ */
 * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+/* 触摸优化：交互控件声明 manipulation，去掉 WebView 上的点按延迟/双击缩放判定 */
+button, a, input, textarea, select, label,
+.btn, .tab, .cell, .list-cell, .chat-item, .seg, .seg-item, .icon-btn {
+  touch-action: manipulation;
+}
 html, body { height: 100%; }
 body {
   margin: 0;
