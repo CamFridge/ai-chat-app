@@ -979,7 +979,7 @@
           var text = String(alts[i] || '').trim();
           if (text) return { text: text, index: i + 1 };
         }
-        return { text: '', index: 0 };
+        return { text: '', index: -1 };
       }
 
       function createSession(character, personas, providers, defProviderId, defPresetId) {

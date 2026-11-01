@@ -457,6 +457,64 @@ body.chat-input-focus .bubble-hint {
   background: var(--brand-weak);
   border-color: color-mix(in srgb, var(--brand) 40%, var(--line));
 }
+
+/* 直接光标指引：目标外发光 + 动画光标 + 气泡标签 */
+.guide-cursor-target {
+  position: relative;
+  outline: 2px solid var(--brand);
+  outline-offset: 3px;
+  border-radius: 10px;
+  animation: guide-cursor-pulse 1.15s ease-in-out infinite;
+  box-shadow: 0 0 0 6px color-mix(in srgb, var(--brand) 22%, transparent);
+  z-index: 2;
+}
+@keyframes guide-cursor-pulse {
+  0%, 100% { box-shadow: 0 0 0 4px color-mix(in srgb, var(--brand) 18%, transparent); }
+  50% { box-shadow: 0 0 0 10px color-mix(in srgb, var(--brand) 26%, transparent); }
+}
+.guide-pointer {
+  position: fixed;
+  left: 0;
+  top: 0;
+  z-index: 990;
+  pointer-events: none;
+  display: none;
+  align-items: flex-start;
+  gap: 2px;
+  transform: translate(-2px, -2px);
+  filter: drop-shadow(0 2px 3px rgba(0, 0, 0, 0.28));
+  animation: guide-pointer-bob 1.05s ease-in-out infinite;
+}
+.guide-pointer.show { display: flex; }
+.guide-pointer.flip { transform: translate(-100%, -2px); }
+.guide-pointer svg {
+  flex: 0 0 auto;
+  transform: rotate(-6deg);
+}
+.guide-pointer-label {
+  margin-top: 26px;
+  margin-left: -6px;
+  padding: 5px 9px;
+  border-radius: 8px;
+  background: #111;
+  color: #fff;
+  font-size: 12px;
+  line-height: 1.3;
+  white-space: nowrap;
+  max-width: 160px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.25);
+}
+.guide-pointer-label.flip { margin-left: 0; margin-right: -6px; }
+@keyframes guide-pointer-bob {
+  0%, 100% { margin-top: 0; }
+  50% { margin-top: -6px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .guide-cursor-target { animation: none; }
+  .guide-pointer { animation: none; }
+}
 .guide-step-idx {
   flex: 0 0 auto;
   width: 20px;

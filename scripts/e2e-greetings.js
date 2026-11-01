@@ -141,6 +141,58 @@ async function waitFor(page, expr, timeoutMs = 10000, intervalMs = 120) {
   if (/备选一/.test(afterPick.first) && afterPick.dom.some((d) => /备选一/.test(d))) ok('首条 assistant 与界面都换成备选问候');
   else bad('首条消息未替换：' + afterPick.first + ' / ' + JSON.stringify(afterPick.dom));
 
+  // ---------- 1b. 选择「空」开场白 ----------
+  await page.eval(`(() => { const b = document.querySelector('.nav-action'); if (b) b.click(); return 'ok'; })()`);
+  await sleep(400);
+  await page.eval(jsClick('.sheet-item', '换个开场白'));
+  await sleep(500);
+  const emptyItem = await page.eval(`(() => {
+    const items = Array.from(document.querySelectorAll('.sheet-item'));
+    const it = items.find(i => (i.textContent || '').indexOf('空对话') >= 0);
+    return it ? 'found' : JSON.stringify(items.map(i => (i.textContent || '').trim()));
+  })()`);
+  if (emptyItem === 'found') ok('问候语面板含「不使用开场白（空对话）」');
+  else bad('问候语面板缺少空对话选项：' + emptyItem);
+  await page.eval(jsClick('.sheet-item', '空对话'));
+  await sleep(900);
+  const afterEmpty = await page.eval(`(async () => {
+    const sess = await App.DB.get('sessions', 'sess_g0');
+    const rows = await App.DB.byIndex('messages', 'sessionId', 'sess_g0');
+    return {
+      greetingIndex: sess.greetingIndex,
+      count: rows.length,
+      bubbles: document.querySelectorAll('.msg-bubble').length,
+      body: (document.querySelector('.msg-list') || {}).innerText || ''
+    };
+  })()`);
+  if (afterEmpty.greetingIndex === -1) ok('选择空对话后 session.greetingIndex=-1');
+  else bad('空对话 greetingIndex 异常：' + afterEmpty.greetingIndex);
+  if (afterEmpty.count === 0) ok('空对话后会话没有消息');
+  else bad('空对话后仍有 ' + afterEmpty.count + ' 条消息');
+  if (afterEmpty.bubbles === 0) ok('界面不显示任何消息气泡');
+  else bad('界面仍有 ' + afterEmpty.bubbles + ' 个气泡');
+  if (/还没有消息|发第一条消息/.test(afterEmpty.body)) ok('显示空对话提示文案');
+  else bad('空对话提示缺失：' + afterEmpty.body.slice(0, 40));
+  await page.screenshot(path.join(SHOTS, '98-greeting-empty.png'));
+
+  // 从空对话切回首选问候语
+  await page.eval(`(() => { const b = document.querySelector('.nav-action'); if (b) b.click(); return 'ok'; })()`);
+  await sleep(400);
+  await page.eval(jsClick('.sheet-item', '换个开场白'));
+  await sleep(500);
+  await page.eval(jsClick('.sheet-item', '首选'));
+  await waitFor(page, `(async () => {
+    const rows = await App.DB.byIndex('messages', 'sessionId', 'sess_g0');
+    return rows.length === 1 && rows[0].role === 'assistant';
+  })()`, 6000);
+  const backToFirst = await page.eval(`(async () => {
+    const sess = await App.DB.get('sessions', 'sess_g0');
+    const rows = await App.DB.byIndex('messages', 'sessionId', 'sess_g0');
+    return { greetingIndex: sess.greetingIndex, first: String(rows[0] && rows[0].content || '') };
+  })()`);
+  if (backToFirst.greetingIndex === 0 && /首选问候/.test(backToFirst.first)) ok('从空对话可切回首选问候语');
+  else bad('切回首选失败：' + JSON.stringify(backToFirst));
+
   // ---------- 2. 已聊过 → 拦截 ----------
   await page.eval(`(async () => { await App.Router.replace('chat', { sessionId: 'sess_chat' }); await new Promise(r => setTimeout(r, 900)); return true; })()`);
   await sleep(300);

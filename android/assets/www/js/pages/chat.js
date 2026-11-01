@@ -1211,6 +1211,14 @@
         return null;
       }
 
+      // 当前会话使用的开场白索引：-1 表示空对话（不使用问候语）
+      function currentGreetingIndex() {
+        var raw = st.session ? st.session.greetingIndex : undefined;
+        if (raw === -1) return -1;
+        if (typeof raw === 'number' && raw >= 0 && findGreetingEntry(raw)) return raw;
+        return firstAssistantMessage() ? 0 : -1;
+      }
+
       function hasUserMessage() {
         return (st.messages || []).some(function (m) { return m && m.role === 'user'; });
       }
@@ -1230,11 +1238,7 @@
           return;
         }
         var entries = greetingEntries();
-        if (!entries.length) {
-          toast('这个角色还没有问候语', 'info');
-          return;
-        }
-        var current = Number(st.session && st.session.greetingIndex) || 0;
+        var current = currentGreetingIndex();
         var items = entries.map(function (e) {
           return {
             id: String(e.idx),
@@ -1243,12 +1247,18 @@
             icon: 'chat'
           };
         });
-        if (items.length < 2) {
-          // 没有备选时给一条提示（点它不做任何事）
-          items.push({
+        items.push({
+          id: '-1',
+          value: '-1',
+          label: '不使用开场白（空对话）',
+          desc: '会话从空白开始，由你先说第一句',
+          icon: 'close'
+        });
+        if (!entries.length) {
+          items.unshift({
             id: '',
             value: 'hint',
-            label: '这个角色还没有备选问候语',
+            label: '这个角色还没有问候语',
             desc: '可在「角色信息 → 编辑角色 → 问候语」里添加',
             icon: 'info'
           });
@@ -1260,7 +1270,7 @@
           cancelText: '取消'
         }).then(function (item) {
           var act = K.itemId(item);
-          if (act === '') return;
+          if (act === '' || act === 'hint') return;
           var idx = Number(act);
           if (!isNaN(idx)) return applyGreeting(idx);
           return null;
@@ -1273,6 +1283,7 @@
       // 应用问候语：替换首条 assistant 消息（没有消息则插入），并写回 session.greetingIndex
       function applyGreeting(idx) {
         if (hasUserMessage()) { toast('已经聊起来了，不能换开场白', 'info'); return Promise.resolve(); }
+        if (idx === -1) return applyEmptyGreeting();
         var entry = findGreetingEntry(idx);
         if (!entry) { toast('这条问候语不存在了', 'error'); return Promise.resolve(); }
         var target = firstAssistantMessage();
@@ -1324,6 +1335,38 @@
         }).catch(function (err) {
           console.error('[chat] 应用开场白失败', err);
           toast('更换开场白失败', 'error');
+        });
+      }
+
+      // 空对话：删除开场白消息（仅允许在还没有用户消息时），会话从空白开始
+      function applyEmptyGreeting() {
+        if (hasUserMessage()) { toast('已经聊起来了，不能换开场白', 'info'); return Promise.resolve(); }
+        var target = firstAssistantMessage();
+        var now = U.now();
+        var chain = target ? D.del('messages', target.id) : Promise.resolve();
+        return chain.then(function () {
+          var patch = {
+            greetingIndex: -1,
+            lastText: '',
+            lastRole: '',
+            lastAt: 0,
+            updatedAt: now
+          };
+          st.session = Object.assign({}, st.session || {}, patch);
+          return D.put('sessions', st.session);
+        }).then(function () {
+          if (st.destroyed) return null;
+          return loadMessages().then(function () {
+            if (st.destroyed) return null;
+            renderMessagesInitial();
+            scrollToBottom(true);
+            markRead();
+            toast('已设为空对话', 'ok');
+            return null;
+          });
+        }).catch(function (err) {
+          console.error('[chat] 清空开场白失败', err);
+          toast('设置失败', 'error');
         });
       }
 

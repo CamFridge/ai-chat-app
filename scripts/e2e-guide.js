@@ -152,6 +152,28 @@ async function clickFanItem(page, label) {
   else bad('「怎么走」没有渲染步骤清单');
   const stepTexts = await page.eval(`(() => Array.from(document.querySelectorAll('.bubble-panel .guide-step')).map(e => (e.innerText || '').replace(/\\s+/g, ' ').trim()))()`);
   ok('步骤内容：' + stepTexts.join(' | '));
+  // 打开面板即自动用光标标出第一个可执行目标（无需再点一次）
+  const autoFocus = await waitFor(page, `(() => {
+    var t = document.querySelector('.guide-cursor-target');
+    var p = document.querySelector('.guide-pointer.show');
+    return !!(t && p);
+  })()`, 4000);
+  if (autoFocus) ok('面板打开后自动出现光标高亮');
+  else bad('面板打开后没有自动光标高亮');
+  const cursorInfo = await page.eval(`(() => {
+    var t = document.querySelector('.guide-cursor-target');
+    var p = document.querySelector('.guide-pointer');
+    var lbl = p ? p.querySelector('.guide-pointer-label') : null;
+    return {
+      focus: t ? (t.getAttribute('data-guide-focus') || '') : '',
+      label: lbl ? (lbl.textContent || '').trim() : '',
+      visible: p ? p.classList.contains('show') : false
+    };
+  })()`);
+  if (cursorInfo.focus === 'baseUrl') ok('光标落在 Base URL 输入框');
+  else bad('光标目标异常：' + JSON.stringify(cursorInfo));
+  if (cursorInfo.label) ok('光标带提示文字：' + cursorInfo.label);
+  else bad('光标没有提示文字');
   await page.screenshot(path.join(SHOTS, '51-guide-steps.png'));
 
   // 点 focus 步骤
@@ -198,6 +220,12 @@ async function clickFanItem(page, label) {
     const pageName = await page.eval(`(() => (App.Router.current() || {}).name)()`);
     if (pageName === 'settings') ok('navigate 步骤跳到设置页');
     else bad('navigate 步骤没有跳转，当前页：' + pageName);
+    const navCursor = await waitFor(page, `(() => {
+      var t = document.querySelector('.tab[data-tab="settings"]');
+      return !!(t && t.classList.contains('guide-cursor-target'));
+    })()`, 3000);
+    if (navCursor) ok('跳转后用光标标出目标 Tab');
+    else bad('跳转后没有标出目标 Tab');
     await page.screenshot(path.join(SHOTS, '53-guide-navigate.png'));
   }
 
