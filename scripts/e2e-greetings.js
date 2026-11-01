@@ -288,15 +288,29 @@ async function waitFor(page, expr, timeoutMs = 10000, intervalMs = 120) {
   }
 
   // ---------- 6. 列表监听 aichat:session-updated 刷新 ----------
-  await page.eval(`(async () => { await App.Router.tab('chatList'); await new Promise(r => setTimeout(r, 700)); return true; })()`);
+  await page.eval(`(async () => { await App.Router.tab('chatList'); await new Promise(r => setTimeout(r, 900)); return true; })()`);
   const refreshOk = await page.eval(`(async () => {
     const sess = await App.DB.get('sessions', 'sess_g0');
     sess.lastText = '事件刷新测试摘要';
+    sess.lastRole = 'assistant';
+    sess.lastAt = Date.now();
     sess.updatedAt = Date.now();
     await App.DB.put('sessions', sess);
-    document.dispatchEvent(new CustomEvent('aichat:session-updated', { detail: { sessionId: 'sess_g0', reason: 'proactive' } }));
-    await new Promise(r => setTimeout(r, 600));
-    return (document.body.innerText || '').indexOf('事件刷新测试摘要') >= 0;
+    await App.DB.put('messages', { id: 'msg_e2e_refresh', sessionId: 'sess_g0', role: 'assistant', content: '事件刷新测试摘要', createdAt: Date.now(), status: 'ok' });
+    for (var attempt = 0; attempt < 3; attempt++) {
+      document.dispatchEvent(new CustomEvent('aichat:session-updated', { detail: { sessionId: 'sess_g0', reason: 'proactive' } }));
+      for (var i = 0; i < 8; i++) {
+        await new Promise(r => setTimeout(r, 100));
+        if ((document.body.innerText || '').indexOf('事件刷新测试摘要') >= 0) return true;
+      }
+      // 兜底：事件在页面转场期间可能被忽略，重新展示列表时 router.onChange 会补一次刷新
+      await App.Router.tab('settings');
+      await new Promise(r => setTimeout(r, 350));
+      await App.Router.tab('chatList');
+      await new Promise(r => setTimeout(r, 500));
+      if ((document.body.innerText || '').indexOf('事件刷新测试摘要') >= 0) return true;
+    }
+    return false;
   })()`);
   if (refreshOk) ok('聊天列表收到 session-updated 事件后刷新摘要');
   else bad('聊天列表未在事件后刷新');

@@ -1,6 +1,6 @@
 # AI 聊天 · Android App
 
-按 [`prompt-01-需求提示词.md`](prompt-01-需求提示词.md) 实现的微信式 AI 聊天应用：远程 OpenAI 兼容 API、角色/世界观体系、角色主动消息与问候语、强制首次引导、应用内悬浮引导气泡。
+按 [`prompt-01-需求提示词.md`](prompt-01-需求提示词.md) 实现的微信式 AI 聊天应用：远程 OpenAI 兼容 API、角色/世界观体系、角色主动消息与问候语、聊天外观自定义与会话存档、强制首次引导、应用内悬浮引导气泡。
 
 **零第三方依赖**（原生 Java 壳 + 纯 HTML/CSS/vanilla JS），手工构建管线（aapt2 → javac → d8 → zipalign → apksigner），不依赖 Gradle。包名 `com.aichat.client`，Android 8.0+（minSdk 26，targetSdk 34）。
 
@@ -10,6 +10,7 @@ APK 均发布在 [Releases](https://github.com/CamFridge/ai-chat-app/releases) �
 
 | 版本 | versionCode | 更新主题 | 大小 | SHA-256 |
 | --- | --- | --- | --- | --- |
+| [v1.3.0](https://github.com/CamFridge/ai-chat-app/releases/download/v1.3.0/AI-Chat-1.3.0.apk) | 7 | 聊天外观（微信/iMessage/QQ）、聊天背景、角色性别、角色级上帝模式、图片库独立入口、会话存档 | 310,565 B | `367F070A550B9FE64B386379A642A6C824BF086273EB629F75DB89D88B733151` |
 | [v1.2.2](https://github.com/CamFridge/ai-chat-app/releases/download/v1.2.2/AI-Chat-1.2.2.apk) | 6 | 主动消息随机间隔可调上下限、到点模型决策、引导光标高亮 | 298,141 B | `232AC425D42481070B9671E99ACC39054A342C34DEEA777C827F2266F629346F` |
 | [v1.2.1](https://github.com/CamFridge/ai-chat-app/releases/download/v1.2.1/AI-Chat-1.2.1.apk) | 5 | 主动消息随机间隔、空开场白 | 294,045 B | `9760F593867D0FCF962769831849134F03F78B694F64D4341DE7E42B327A23B6` |
 | [v1.2.0](https://github.com/CamFridge/ai-chat-app/releases/download/v1.2.0/AI-Chat-1.2.0.apk) | 4 | 角色主动消息 + 问候语首选/备选 | 289,949 B | `FF4649A1917B05A58F31F01BC97DF83A800ED89B5B9B586C84452099D934AF67` |
@@ -20,14 +21,24 @@ APK 均发布在 [Releases](https://github.com/CamFridge/ai-chat-app/releases) �
 签名证书 SHA-256：`F4AAA0A8AC71DCA67AD95F290F106A44C12D694F8477305FB213828AB92D2590`。
 
 ```powershell
-adb install -r AI-Chat-1.2.2.apk
+adb install -r AI-Chat-1.3.0.apk
 ```
 
 也可以把 APK 传到手机点击安装（允许「安装未知来源应用」）。首次启动会强制进入 6 步「引导 API」向导，测试连接不通过无法进入主界面。
 
-> 签名密钥库（`keystore/aichat-release.jks`）**不随仓库公开**。各 tag 的源码均可构建出同签名 APK 的等价包；v1.0.0 / v1.1.1 / v1.2.0 与 v1.2.2 的原始构建产物在工程被外部清理时丢失，仓库中的这些 APK 由对应 tag 源码重建（签名证书与包内容一致，v1.0.0、v1.1.1、v1.2.0 因 APK 签名块 padding 分桶与原交付件相差 4,096 字节，v1.2.2 字节数完全一致），仅构建时间戳不同 → SHA-256 与原始交付件不同。
+> 签名密钥库（`keystore/aichat-release.jks`）**不随仓库公开**。各 tag 的源码均可构建出同签名 APK 的等价包。v1.3.0 的 APK 是原始交付文件；v1.0.0 与 v1.1.1～v1.2.2 的原始构建产物在工程被外部清理时丢失，仓库中的这些 APK 由对应 tag 源码重建（签名证书与包内容一致，其中 v1.2.1、v1.2.2 与原交付件字节数完全一致，v1.0.0、v1.1.1、v1.2.0 因 APK 签名块 padding 分桶与原交付件相差 4,096 字节），仅构建时间戳不同 → SHA-256 与原始交付件不同。
 
 ## 版本历史
+
+### v1.3.0 — 聊天外观 / 性别 / 角色级上帝模式 / 独立图片库 / 存档
+
+- **聊天界面样式**：设置 →「聊天界面 → 聊天界面样式」可选「微信 / iMessage / QQ」，切换立即生效并持久化（`settings.chat_style`，`body[data-chat-style]`）。
+- **自定义聊天背景 / 我的头像**：从相册选图（dataURI，存 IndexedDB settings）；聊天页整页背景 + 蒙层保证文字可读，「我」的消息旁显示自定义头像；深色 / AMOLED 下蒙层自动加深。
+- **角色性别**：创建角色 Step3 可选「女 / 男 / 其他 / 不设定」，编辑页可改，列表显示性别标签；AI 补全 / 改稿 / 草稿恢复不会覆盖用户选择。
+- **每个角色单独开关上帝模式**：生效规则「角色开关 || 全局开关」，全局一键全开、单角色也可独立开。
+- **角色图片库独立入口**：角色列表行「⋯」→「图片库」直接打开，添加后自动关闭弹窗并提示「已添加 N 张」；删除角色时级联清理。
+- **存档 / 读档 / 以存档开新对话**：给会话拍快照（消息、角色、API/模型、预设、人设、开场白索引），可命名备注；单会话最多 60 个、总量 300 个；支持读档回滚、以存档开新对话、重命名、删除；数据存 IndexedDB 新表 `saves`（数据库升级到 v3）。
+- **交互修复**：世界观选择页选中卡片只原地更新（长列表可滚动、点击不卡）、「+ 添加图片」不再被 toast 挡住、弹窗/操作菜单恢复可见、连续操作时 toast 只保留最新一条。
 
 ### v1.2.2 — 主动消息更自然
 
@@ -71,9 +82,11 @@ adb install -r AI-Chat-1.2.2.apk
 ## 功能
 
 - **4 Tab**：聊天 / 角色 / API / 设置（微信式布局，浅色 / 深色 / AMOLED 三种主题）。
-- **聊天**：会话列表（置顶、搜索、未读）、流式输出、停止保留内容、重新生成、多版本切换、继续生成、编辑/复制/删除、上下文裁剪、会话内切换 API/模型。
-- **角色**：陪聊角色 / 领域助手（10 大领域 → 专业映射）；5 步创建向导，AI 补全严格 JSON（失败重试 1 次 + 手动兜底）、草稿持久化、预览标注「AI 补全 / 你填写」、「让 AI 改」多版本回滚。
+- **聊天**：会话列表（置顶、搜索、未读）、流式输出、停止保留内容、重新生成、多版本切换、继续生成、编辑/复制/删除、上下文裁剪、会话内切换 API/模型、聊天界面样式（微信 / iMessage / QQ）、聊天背景与「我」的头像。
+- **会话存档**：会话快照（消息 + 配置）存档 / 读档 / 以存档开新对话，支持命名备注与批量管理。
+- **角色**：陪聊角色 / 领域助手（10 大领域 → 专业映射）；5 步创建向导，AI 补全严格 JSON（失败重试 1 次 + 手动兜底）、草稿持久化、预览标注「AI 补全 / 你填写」、「让 AI 改」多版本回滚；角色性别、角色级上帝模式、角色图片库独立入口。
 - **世界观**：现代都市 / 古代宫廷 / 校园日常 / 赛博朋克 / ABO / 斗破苍穹 / 无，支持自定义 + AI 补全。
+- **主动消息**：固定档位或随机间隔（可调上下限），到点由模型决定是否打扰，App 在后台用系统通知提醒。
 - **API 管理**：任意 OpenAI 兼容端点、连接测试、模型列表、引导 API 与默认聊天 API、Key 加密存储（不写库、不进导出备份）。
 - **引导助手**：独立 help 会话、静态 FAQ 兜底、错误提示带上下文提问。
 - **悬浮引导气泡**：52dp 小球、拖动吸附左右、位置记忆、扇形 3~4 项、「怎么走」返回可点击步骤并高亮/跳转目标控件。
@@ -96,11 +109,19 @@ adb install -r AI-Chat-1.2.2.apk
 | --- | --- | --- |
 | ![间隔上下限](docs/screenshots/settings-proactive-interval.png) | ![问候语](docs/screenshots/greeting-sheet.png) | ![空开场白](docs/screenshots/greeting-empty.png) |
 
+| 聊天界面设置（v1.3.0） | iMessage 样式 | 存档菜单 |
+| --- | --- | --- |
+| ![聊天界面设置](docs/screenshots/settings-chatui.png) | ![iMessage](docs/screenshots/chat-imessage.png) | ![存档](docs/screenshots/saves-menu.png) |
+
+| 角色图片库入口 | 性别 + 角色级上帝模式 |
+| --- | --- |
+| ![图片库入口](docs/screenshots/image-library.png) | ![性别](docs/screenshots/character-gender-god.png) |
+
 ## 验证
 
-- 无头 Chrome E2E：`scripts/audit.js`、`scripts/e2e-onboarding.js`(26)、`scripts/e2e-character.js`(28)、`scripts/e2e-chat.js`(16)、`scripts/e2e-guide.js`(14)、`scripts/e2e-acceptance.js`(32)、`scripts/e2e-media.js`(46)、`scripts/e2e-greetings.js`、`scripts/e2e-proactive.js` 全部通过。
+- 无头 Chrome E2E：`scripts/audit.js`、`scripts/e2e-onboarding.js`(26)、`scripts/e2e-character.js`(28)、`scripts/e2e-chat.js`(16)、`scripts/e2e-guide.js`(14)、`scripts/e2e-acceptance.js`(32)、`scripts/e2e-media.js`(46)、`scripts/e2e-greetings.js`、`scripts/e2e-proactive.js`、`scripts/e2e-saves.js`、`scripts/e2e-v130.js` 全部通过。
 - 「一串 null」修复单测（桌面 JVM + 真实 `org.json`，从 `Net.java` 原样提取方法）：`scripts/jvm-null/` **13/13 ALL PASS**。
-- 设备端验证（Android 13 / API 33 模拟器，AEHD 加速）：`scripts/device-e2e.js` **17/17**、`scripts/device-null.js` **3/3**、`scripts/device-media-smoke.js` **7/7**；v1.2.x 另有 `scripts/device-proactive.js`。触摸实测：Tab 切换 103–360ms、流式中点「停止」357ms 响应。
+- 设备端验证（Android 13 / API 33 模拟器，AEHD 加速）：`scripts/device-e2e.js` **17/17**、`scripts/device-null.js` **3/3**、`scripts/device-media-smoke.js` **7/7**；v1.2.x 起另有 `scripts/device-proactive.js`，v1.3.0 另有 `scripts/device-back-test.js`。触摸实测：Tab 切换 103–360ms、流式中点「停止」357ms 响应。
 
 ## 构建
 
@@ -114,7 +135,7 @@ pwsh -NoProfile -ExecutionPolicy Bypass -File scripts\build.ps1 -DebugMode    # 
 ## 目录
 
 ```
-android/            原生壳（Java）+ 前端资源 assets/www（13 个页面 + 核心模块）
+android/            原生壳（Java）+ 前端资源 assets/www（页面与核心模块）
 scripts/            构建、SDK 安装、预览服务器、E2E/设备验证、截图脚本
 docs/CONTRACT.md    前端模块契约
 docs/DELIVERY.md    交付说明（指纹、验收对照、验证结果、已知限制）

@@ -67,7 +67,8 @@
         godMode: false,
         images: [],
         pendingAttach: null,
-        imgCache: {}
+        imgCache: {},
+        styleAvatarUri: ''   // 已渲染的「我」头像 data URI 缓存（v1.3.0）
       };
 
       /* ---------------- 页面骨架 ---------------- */
@@ -328,13 +329,69 @@
         return bubble;
       }
 
+      /* ---------------- 「我」的头像：优先用 App.Style.getUserAvatar()（v1.3.0） ---------------- */
+      function userAvatarUri() {
+        try {
+          if (App.Style && typeof App.Style.getUserAvatar === 'function') {
+            return App.Style.getUserAvatar() || '';
+          }
+        } catch (e) { /* 忽略 */ }
+        return '';
+      }
+
+      function myAvatarEl() {
+        return K.avatarEl({
+          name: (st.persona && st.persona.name) || '我',
+          avatar: userAvatarUri()
+        }, 'sm');
+      }
+
+      // 只替换消息列表里的「我」头像节点（不重绘整页）：Style 异步 ready 或从设置页返回时调用
+      function refreshMyAvatars(force) {
+        if (st.destroyed) return;
+        var uri = userAvatarUri();
+        if (!force && uri === st.styleAvatarUri) return;
+        st.styleAvatarUri = uri;
+        var nodes = listEl.querySelectorAll('.msg.me > .msg-avatar');
+        for (var i = 0; i < nodes.length; i++) {
+          var old = nodes[i];
+          if (!old || !old.parentNode) continue;
+          var fresh = myAvatarEl();
+          fresh.classList.add('msg-avatar');
+          old.parentNode.replaceChild(fresh, old);
+        }
+      }
+
+      // Style 可能在页面 build 之后才 ready：短轮询，ready 后补一次头像刷新（避免整页重绘）
+      function scheduleAvatarRefresh() {
+        var tries = 0;
+        function attempt() {
+          if (st.destroyed) return;
+          tries++;
+          var ready = false;
+          try {
+            ready = !!(App.Style && typeof App.Style.isLoaded === 'function' && App.Style.isLoaded());
+          } catch (e) { ready = false; }
+          if (ready) { refreshMyAvatars(); return; }
+          if (tries >= 8) return;
+          setTimeout(attempt, 300);
+        }
+        setTimeout(attempt, 300);
+      }
+
       function buildMsg(m) {
         var isMe = m.role === 'user';
         var node = App.UI.el('div', {
           class: 'msg ' + (isMe ? 'me' : 'ai') + (m.status === 'streaming' ? ' is-streaming' : ''),
           dataset: { id: m.id, ts: String(m.createdAt || '') }
         });
-        var av = K.avatarEl(isMe ? st.persona : (st.character || { name: '?' }), 'sm');
+        var av;
+        if (isMe) {
+          av = myAvatarEl();
+          st.styleAvatarUri = userAvatarUri();
+        } else {
+          av = K.avatarEl(st.character || { name: '?' }, 'sm');
+        }
         av.classList.add('msg-avatar');
         node.appendChild(av);
         var body = App.UI.el('div', { class: 'msg-body' });
@@ -655,12 +712,15 @@
         }
         var ctx;
         try {
+          // 上帝模式：角色级开关 || 全局设置（v1.3.0，角色字段由角色编辑页维护）
+          var charGod = !!(st.character && st.character.godMode);
+          var godOn = charGod || st.godMode === true;
           ctx = K.buildContext({
             character: st.character,
             persona: st.persona,
             preset: st.preset,
             messages: history,
-            godMode: st.godMode === true,
+            godMode: godOn,
             images: st.images
           });
         } catch (e) {
@@ -1532,6 +1592,222 @@
         });
       }
 
+      /* ---------------- 存档 / 读档 / 以存档开新对话（v1.3.0） ---------------- */
+      function savesApi() {
+        var S = App.Saves;
+        if (!S || typeof S.snapshot !== 'function') {
+          toast('当前版本不支持存档', 'error');
+          return null;
+        }
+        return S;
+      }
+
+      function pad2(n) { return n < 10 ? '0' + n : String(n); }
+
+      // 存档时间：MM-DD HH:mm
+      function fmtSaveTime(ts) {
+        if (!Number(ts)) return '';
+        var d = new Date(Number(ts));
+        return pad2(d.getMonth() + 1) + '-' + pad2(d.getDate()) + ' ' + pad2(d.getHours()) + ':' + pad2(d.getMinutes());
+      }
+
+      function defaultSaveName() {
+        var d = new Date();
+        var who = (st.character && st.character.name) || (st.session && st.session.title) || '会话';
+        return who + ' · ' + (d.getMonth() + 1) + '/' + d.getDate() + ' ' + pad2(d.getHours()) + ':' + pad2(d.getMinutes());
+      }
+
+      // 生成中不允许存档/读档
+      function guardGenerating() {
+        if (st.streaming) {
+          toast('正在生成，请先停止', 'info');
+          return false;
+        }
+        return true;
+      }
+
+      // 新建存档：先让用户起名
+      function createSave() {
+        var S = savesApi();
+        if (!S) return;
+        if (!guardGenerating()) return;
+        var def = defaultSaveName();
+        K.prompt({
+          title: '存档',
+          message: '给这个存档点起个名字',
+          value: def,
+          okText: '存档',
+          cancelText: '取消'
+        }).then(function (name) {
+          if (name === null) return null; // 用户取消
+          return S.snapshot(sessionId, { name: name || def }).then(function (save) {
+            toast('已存档：' + ((save && save.name) || def), 'ok');
+            return null;
+          });
+        }).catch(function (err) {
+          console.error('[chat] 存档失败', err);
+          toast('存档失败：' + ((err && err.message) || '未知错误'), 'error');
+        });
+      }
+
+      // 存档点列表（含「新建存档」）
+      function openSavesSheet() {
+        var S = savesApi();
+        if (!S) return;
+        if (!guardGenerating()) return;
+        S.list({ sessionId: sessionId }).then(function (list) {
+          var items = [{
+            id: '__new__',
+            value: '__new__',
+            label: '＋ 新建存档',
+            desc: '把当前对话存成一个小档',
+            icon: 'plus'
+          }];
+          (list || []).forEach(function (sv) {
+            var n = Array.isArray(sv.messages) ? sv.messages.length : 0;
+            items.push({
+              id: sv.id,
+              value: sv.id,
+              label: sv.name || '未命名存档',
+              desc: n + ' 条消息 · ' + fmtSaveTime(sv.createdAt),
+              icon: 'time'
+            });
+          });
+          return K.sheet({ title: '存档点', items: items, cancelText: '取消' });
+        }).then(function (item) {
+          var id = K.itemId(item);
+          if (!id) return null;
+          if (id === '__new__') return createSave();
+          return openSaveActions(id);
+        }).catch(function (err) {
+          console.error('[chat] 读取存档列表失败', err);
+          toast('读取存档失败', 'error');
+        });
+      }
+
+      // 单个存档的操作菜单
+      function openSaveActions(saveId) {
+        var S = savesApi();
+        if (!S) return Promise.resolve(null);
+        return S.get(saveId).then(function (save) {
+          if (!save) { toast('存档不存在', 'error'); return null; }
+          return K.sheet({
+            title: save.name || '存档',
+            items: [
+              { id: 'restore', value: 'restore', label: '读档', desc: '回到这个存档点（当前这段对话会被替换）', icon: 'refresh' },
+              { id: 'new', value: 'new', label: '以此开新对话', desc: '保留存档，另开一个新会话', icon: 'chat' },
+              { id: 'rename', value: 'rename', label: '重命名', icon: 'edit' },
+              { id: 'delete', value: 'delete', label: '删除存档', icon: 'delete', danger: true }
+            ],
+            cancelText: '取消'
+          }).then(function (item) {
+            var act = K.itemId(item);
+            if (!act) return null;
+            if (act === 'restore') return restoreSave(saveId);
+            if (act === 'new') return newChatFromSave(saveId);
+            if (act === 'rename') return renameSave(save);
+            if (act === 'delete') return deleteSave(save);
+            return null;
+          });
+        }).catch(function (err) {
+          console.error('[chat] 打开存档失败', err);
+          toast('打开存档失败', 'error');
+        });
+      }
+
+      // 读档：覆盖当前会话的消息与配置，然后重载本页
+      function restoreSave(saveId) {
+        var S = savesApi();
+        if (!S) return Promise.resolve(null);
+        if (!guardGenerating()) return Promise.resolve(null);
+        return K.confirm({
+          title: '读档',
+          message: '回到这个存档点？当前这段对话会被替换。',
+          okText: '读档',
+          cancelText: '取消',
+          danger: true
+        }).then(function (ok) {
+          if (!ok) return null;
+          return S.restore(saveId).then(function (res) {
+            if (st.destroyed) return null;
+            st.hasOlder = false;
+            st.startIndex = 0;
+            return reloadMeta().then(function () {
+              return loadMessages();
+            }).then(function () {
+              if (st.destroyed) return null;
+              applyTitle();
+              renderTopbar();
+              renderMessagesInitial();
+              U.raf(function () { scrollToBottom(true); });
+              markRead();
+              var name = (res && res.save && res.save.name) || '存档点';
+              toast('已回到存档点：' + name, 'ok');
+              return null;
+            });
+          });
+        }).catch(function (err) {
+          console.error('[chat] 读档失败', err);
+          toast('读档失败：' + ((err && err.message) || '未知错误'), 'error');
+        });
+      }
+
+      // 以某个存档为起点开新对话
+      function newChatFromSave(saveId) {
+        var S = savesApi();
+        if (!S) return Promise.resolve(null);
+        if (!guardGenerating()) return Promise.resolve(null);
+        return S.newFromSave(saveId).then(function (session) {
+          toast('已从存档点开始新对话', 'ok');
+          return App.Router.push('chat', { sessionId: session.id });
+        }).catch(function (err) {
+          console.error('[chat] 以存档开新对话失败', err);
+          toast('开新对话失败：' + ((err && err.message) || '未知错误'), 'error');
+        });
+      }
+
+      function renameSave(save) {
+        var S = savesApi();
+        if (!S) return Promise.resolve(null);
+        return K.prompt({
+          title: '重命名存档',
+          value: save.name || '',
+          placeholder: '存档名字',
+          okText: '保存',
+          cancelText: '取消'
+        }).then(function (name) {
+          if (name === null || !name) return null;
+          return S.rename(save.id, name).then(function () {
+            toast('已重命名', 'ok');
+            return null;
+          });
+        }).catch(function (err) {
+          console.error('[chat] 重命名存档失败', err);
+          toast('重命名失败', 'error');
+        });
+      }
+
+      function deleteSave(save) {
+        var S = savesApi();
+        if (!S) return Promise.resolve(null);
+        return K.confirm({
+          title: '删除存档',
+          message: '删除「' + (save.name || '存档') + '」？此操作不可恢复。',
+          okText: '删除',
+          cancelText: '取消',
+          danger: true
+        }).then(function (ok) {
+          if (!ok) return null;
+          return S.remove(save.id).then(function () {
+            toast('已删除存档', 'ok');
+            return null;
+          });
+        }).catch(function (err) {
+          console.error('[chat] 删除存档失败', err);
+          toast('删除存档失败', 'error');
+        });
+      }
+
       function openSessionMenu() {
         K.sheet({
           title: (st.session && st.session.title) || '会话操作',
@@ -1540,6 +1816,8 @@
             { id: 'model', value: 'model', label: '切换模型 / API', icon: 'api' },
             { id: 'greeting', value: 'greeting', label: '换个开场白', icon: 'chat' },
             { id: 'gen', value: 'gen', label: '生成设置（预设）', icon: 'settings' },
+            { id: 'save', value: 'save', label: '存档', icon: 'check' },
+            { id: 'saves', value: 'saves', label: '存档点', icon: 'time' },
             { id: 'char', value: 'char', label: '角色信息', icon: 'character' },
             { id: 'clear', value: 'clear', label: '清空消息', icon: 'trash' },
             { id: 'delete', value: 'delete', label: '删除会话', icon: 'delete', danger: true }
@@ -1552,6 +1830,8 @@
           if (act === 'model') return openModelSheet();
           if (act === 'greeting') return openGreetingSheet();
           if (act === 'gen') return openGenSettings();
+          if (act === 'save') return createSave();
+          if (act === 'saves') return openSavesSheet();
           if (act === 'char') return openCharacterDrawer();
           if (act === 'clear') return clearMessages();
           if (act === 'delete') return deleteSession();
@@ -1600,6 +1880,8 @@
         field('口头禅', st.character.catchphrases);
         field('场景', st.character.scenario);
         field('开场白', st.character.firstMessage);
+        // 只读展示：角色级上帝模式开关（在角色编辑页修改）
+        field('上帝模式', st.character.godMode === true ? '已开启（角色设置）' : '未开启（可在角色编辑页开启）');
         if (st.character.type === 'assistant') {
           field('领域', st.character.domain);
           field('专长', st.character.specialty);
@@ -1939,6 +2221,7 @@
           try { page.setActions([{ icon: 'more', label: '会话菜单', onClick: openSessionMenu }]); } catch (e) { /* 忽略 */ }
           st.followBottom = true;
           U.raf(function () { scrollToBottom(true); });
+          scheduleAvatarRefresh();
           return null;
         }).catch(function (err) {
           console.error('[chat] 加载失败', err);
@@ -1985,6 +2268,7 @@
           applyTitle();
           renderTopbar();
           refreshImageNodes();
+          refreshMyAvatars();
           syncGuide();
           return null;
         }).catch(function (err) { console.error('[chat] 重新加载元数据失败', err); });

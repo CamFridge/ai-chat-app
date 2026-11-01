@@ -34,6 +34,7 @@
     imgModal: null,    // 图片库弹窗句柄
     imgGridBox: null,  // 弹窗内网格容器（新增/删除后局部刷新）
     imgCountEl: null,  // 弹窗内数量文案
+    godMode: false,    // 上帝模式（characters.godMode）
     greetModal: null,  // 问候语弹窗句柄（首选 + 备选）
     destroyed: false,
     busy: false,
@@ -42,6 +43,33 @@
 
   var COMPANION_KEYS = ['personality', 'habits', 'background', 'speechStyle', 'catchphrases', 'scenario'];
   var ASSISTANT_KEYS = ['domain', 'specialty', 'duties', 'answerStyle', 'knowledgeBoundary', 'refusalPolicy'];
+
+  /* 角色图片库弹窗的共享状态：
+   * 编辑页里用，也可以被角色列表通过 App.ImageLibrary.open(characterId) 单独打开。
+   */
+  var imgLib = {
+    modal: null,
+    characterId: '',
+    name: '',
+    images: [],
+    busy: false,
+    gridBox: null,
+    countEl: null,
+    addBtn: null
+  };
+
+  /* 性别（characters.gender）：'female' | 'male' | 'other' | ''（未设定） */
+  function normalizeGender(v) {
+    return (v === 'female' || v === 'male' || v === 'other') ? v : '';
+  }
+
+  function genderText(v) {
+    var g = normalizeGender(v);
+    if (g === 'female') return '女';
+    if (g === 'male') return '男';
+    if (g === 'other') return '其他';
+    return '';
+  }
 
   /* ------------------------------------------------------------
    * 渲染
@@ -87,6 +115,9 @@
     // 类型
     list.appendChild(typeRow());
 
+    // 性别
+    list.appendChild(genderRow());
+
     // 头像
     list.appendChild(fieldRow('avatar', '头像地址（可空）', state.card.avatar, { multiline: false, placeholder: '图片 URL 或留空用文字头像' }));
 
@@ -95,6 +126,9 @@
 
     // 角色图片库（聊天时 TA 可以主动发图）
     list.appendChild(imageRow());
+
+    // 上帝模式（单个角色开关）
+    list.appendChild(godModeRow());
 
     // 类型专属字段
     var keys = state.card.type === 'assistant' ? ASSISTANT_KEYS : COMPANION_KEYS;
@@ -164,6 +198,52 @@
     return cell;
   }
 
+  function genderRow() {
+    var text = genderText(state.card.gender) || '未设定';
+    var cell = UI.el('div', {
+      class: 'cell ck-field',
+      attrs: { role: 'button', tabindex: '0', 'data-guide-focus': 'gender' }
+    },
+      UI.el('div', { class: 'main' },
+        UI.el('div', { class: 'ck-field-label' },
+          UI.el('span', { class: 'ck-field-title', text: '性别' })
+        ),
+        UI.el('div', {
+          class: 'ck-field-value' + (genderText(state.card.gender) ? '' : ' ck-empty'),
+          text: text
+        })
+      ),
+      UI.el('span', { class: 'chev', html: UI.icon('chev', 17) })
+    );
+    cell.addEventListener('click', pickGender);
+    return cell;
+  }
+
+  function pickGender() {
+    UI.sheet({
+      title: '选择性别',
+      selected: normalizeGender(state.card.gender),
+      items: [
+        { id: 'female', label: '女' },
+        { id: 'male', label: '男' },
+        { id: 'other', label: '其他' },
+        { id: '', label: '不设定' }
+      ]
+    }).then(function (item) {
+      if (!item || state.destroyed || !state.card) return;
+      state.card.gender = normalizeGender(item.id);
+      // 性别变化会影响人设语气 → 清空 systemPrompt，保存时按字段重建
+      markUser('gender');
+      UI.toast(genderText(state.card.gender)
+        ? '性别已改为「' + genderText(state.card.gender) + '」，记得保存'
+        : '性别已设为不设定，记得保存');
+      render();
+    }).catch(function (err) {
+      console.warn('[character-edit] 选择性别失败', err);
+      UI.toast('操作失败，请重试', 'error');
+    });
+  }
+
   function worldviewRow() {
     var name = Kit.snapshotName(state.card.worldviewSnapshot) || '无世界观';
     var cell = UI.el('div', { class: 'cell ck-field', attrs: { role: 'button', tabindex: '0' } },
@@ -197,23 +277,52 @@
       ),
       UI.el('span', { class: 'chev', html: UI.icon('chev', 17) })
     );
-    cell.addEventListener('click', openImageModal);
+    cell.addEventListener('click', function () { openImageLibrary(state.id); });
     return cell;
   }
 
-  // 读取图片库（优先 App.Media，缺失时直接读 characterImages 表兜底）
-  function loadImages() {
-    if (!state.id) return Promise.resolve([]);
+  // 上帝模式：单个角色独立开关（全局开关在设置页，聊天侧取二者或值）
+  function godModeRow() {
+    var on = !!state.godMode;
+    var sw = UI.el('span', {
+      class: 'switch' + (on ? ' on' : ''),
+      attrs: { role: 'switch', 'aria-checked': on ? 'true' : 'false', 'aria-label': '上帝模式' }
+    });
+    var cell = UI.el('div', {
+      class: 'cell ck-field',
+      attrs: { role: 'button', tabindex: '0', 'data-guide-focus': 'characterGodMode' }
+    },
+      UI.el('div', { class: 'main' },
+        UI.el('div', { class: 'ck-field-label' },
+          UI.el('span', { class: 'ck-field-title', text: '上帝模式' })
+        ),
+        UI.el('div', { class: 'ck-field-value ck-sub-text', text: '开启后 TA 知道自己只是虚拟角色，可以和你聊这件事' })
+      ),
+      UI.el('div', { class: 'side' }, sw)
+    );
+    cell.addEventListener('click', function () {
+      state.godMode = !state.godMode;
+      var checked = !!state.godMode;
+      if (checked) sw.classList.add('on'); else sw.classList.remove('on');
+      sw.setAttribute('aria-checked', checked ? 'true' : 'false');
+      updateGuide();
+    });
+    return cell;
+  }
+
+  // 读取某个角色的图片库（优先 App.Media，缺失时直接读 characterImages 表兜底）
+  function loadImagesFor(characterId) {
+    if (!characterId) return Promise.resolve([]);
     var M = App.Media;
     if (M && typeof M.list === 'function') {
-      return Promise.resolve(M.list(state.id)).then(function (rows) {
+      return Promise.resolve(M.list(characterId)).then(function (rows) {
         return Array.isArray(rows) ? rows : [];
       }).catch(function (err) {
         console.error('[characterEdit] 读取图片库失败', err);
         return [];
       });
     }
-    return DB.byIndex('characterImages', 'characterId', state.id).then(function (rows) {
+    return DB.byIndex('characterImages', 'characterId', characterId).then(function (rows) {
       return (rows || []).slice().sort(function (a, b) {
         return (Number(a.createdAt) || 0) - (Number(b.createdAt) || 0);
       });
@@ -223,73 +332,148 @@
     });
   }
 
-  function refreshImages() {
-    return loadImages().then(function (rows) {
-      if (state.destroyed) return null;
-      state.images = rows;
-      render();          // 刷新表单里「N 张」副标题
-      renderImageGrid(); // 刷新弹窗网格
-      return rows;
+  // 编辑页用：读取当前角色（state.id）的图片库
+  function loadImages() {
+    return loadImagesFor(state.id);
+  }
+
+  // 刷新弹窗网格 / 数量，以及编辑页里的「N 张」副标题
+  function refreshLibrary() {
+    var id = imgLib.characterId;
+    return loadImagesFor(id).then(function (rows) {
+      imgLib.images = rows || [];
+      if (state.id === id) {
+        state.images = imgLib.images;
+        if (state.root && state.card && !state.destroyed) render();
+      }
+      renderImageGrid();
+      return imgLib.images;
     });
   }
 
-  function openImageModal() {
-    if (!state.card || state.destroyed) return;
-    if (state.imgModal) return;
+  // 兼容编辑页旧调用
+  function refreshImages() {
+    return refreshLibrary();
+  }
 
-    var content = UI.el('div', { class: 'ck-img-modal' });
-    content.appendChild(UI.el('div', { class: 'ck-img-desc', text: '把图片放进 TA 的图片库。聊天时 TA 可以主动挑一张发给你；也可以让引导助手帮你添加。' }));
+  function closeImageLibrary() {
+    var handle = imgLib.modal;
+    imgLib.modal = null;
+    imgLib.gridBox = null;
+    imgLib.countEl = null;
+    imgLib.addBtn = null;
+    state.imgModal = null;
+    if (handle) {
+      try { handle.close(); } catch (e) { /* 忽略 */ }
+    }
+  }
 
-    var count = UI.el('div', { class: 'ck-img-count' });
-    var gridBox = UI.el('div', {});
-    content.appendChild(count);
-    content.appendChild(gridBox);
+  // 添加图片期间禁用按钮，避免重复触发
+  function setImgBusy(on) {
+    imgLib.busy = !!on;
+    state.imgBusy = !!on;
+    if (imgLib.addBtn) {
+      imgLib.addBtn.disabled = !!on;
+      imgLib.addBtn.textContent = on ? '添加中…' : '＋ 添加图片';
+    }
+  }
 
-    var foot = UI.el('div', { class: 'ck-img-foot' });
-    var addBtn = UI.el('button', {
-      class: 'btn primary block',
-      type: 'button',
-      attrs: { 'data-guide-tap': 'addCharacterImage' },
-      text: '＋ 添加图片'
-    });
-    var helpBtn = UI.el('button', { class: 'btn ghost block', type: 'button', text: '让引导助手帮我加' });
-    addBtn.addEventListener('click', addLibraryImage);
-    helpBtn.addEventListener('click', helpAddImage);
-    foot.appendChild(addBtn);
-    foot.appendChild(helpBtn);
-    content.appendChild(foot);
+  /**
+   * 打开某个角色的图片库弹窗（角色列表与编辑页共用）。
+   * @param {string} characterId 角色 id
+   */
+  function openImageLibrary(characterId) {
+    characterId = String(characterId || '').trim();
+    if (!characterId) {
+      UI.toast('请先保存角色后再添加图片', 'error');
+      return Promise.resolve(null);
+    }
+    if (imgLib.modal) closeImageLibrary();
 
-    state.imgGridBox = gridBox;
-    state.imgCountEl = count;
-    renderImageGrid();
-
-    state.imgModal = UI.modal({
-      title: '角色图片库',
-      content: content,
-      dismissible: true,
-      onClose: function () {
-        state.imgModal = null;
-        state.imgGridBox = null;
-        state.imgCountEl = null;
+    return Promise.all([DB.get('characters', characterId), loadImagesFor(characterId)]).then(function (res) {
+      var ch = res[0];
+      var rows = res[1] || [];
+      if (!ch) {
+        UI.toast('角色不存在或已删除', 'error');
+        return null;
       }
+      imgLib.characterId = characterId;
+      imgLib.name = ch.name || '未命名角色';
+      imgLib.images = rows;
+      imgLib.busy = false;
+
+      var content = UI.el('div', { class: 'ck-img-modal' });
+      content.appendChild(UI.el('div', { class: 'ck-img-desc', text: '把图片放进 TA 的图片库。聊天时 TA 可以主动挑一张发给你；也可以让引导助手帮你添加。' }));
+
+      var count = UI.el('div', { class: 'ck-img-count' });
+      var gridBox = UI.el('div', {});
+      content.appendChild(count);
+      content.appendChild(gridBox);
+
+      var foot = UI.el('div', { class: 'ck-img-foot' });
+      var addBtn = UI.el('button', {
+        class: 'btn primary block',
+        type: 'button',
+        attrs: { 'data-guide-tap': 'addCharacterImage' },
+        text: '＋ 添加图片'
+      });
+      var helpBtn = UI.el('button', { class: 'btn ghost block', type: 'button', text: '让引导助手帮我加' });
+      addBtn.addEventListener('click', addLibraryImage);
+      helpBtn.addEventListener('click', helpAddImage);
+      foot.appendChild(addBtn);
+      foot.appendChild(helpBtn);
+      content.appendChild(foot);
+
+      imgLib.gridBox = gridBox;
+      imgLib.countEl = count;
+      imgLib.addBtn = addBtn;
+      renderImageGrid();
+
+      var modal = UI.modal({
+        title: '角色图片库 · ' + imgLib.name,
+        content: content,
+        dismissible: true,
+        onClose: function () {
+          if (imgLib.modal === modal) {
+            imgLib.modal = null;
+            imgLib.gridBox = null;
+            imgLib.countEl = null;
+            imgLib.addBtn = null;
+            state.imgModal = null;
+          }
+        }
+      });
+      imgLib.modal = modal;
+      state.imgModal = modal;
+      // 内容区约 80vh（base.css 里 .modal-body 默认 45vh；小屏时按视口高度收敛）
+      if (modal && modal.box) modal.box.style.maxHeight = 'min(80vh, calc(100vh - 150px))';
+      return modal;
+    }).catch(function (err) {
+      console.error('[characterEdit] 打开图片库失败', err);
+      UI.toast('打开图片库失败：' + ((err && err.message) || '未知错误'), 'error');
+      return null;
     });
-    // 内容区约 80vh（base.css 里 .modal-body 默认 45vh；小屏时按视口高度收敛）
-    if (state.imgModal && state.imgModal.box) state.imgModal.box.style.maxHeight = 'min(80vh, calc(100vh - 150px))';
+  }
+
+  // 编辑页内入口：打开当前角色的图片库
+  function openImageModal() {
+    return openImageLibrary(state.id);
   }
 
   function renderImageGrid() {
-    var box = state.imgGridBox;
+    var box = imgLib.gridBox;
     if (!box) return;
     UI.clear(box);
-    if (state.imgCountEl) state.imgCountEl.textContent = state.images.length ? ('共 ' + state.images.length + ' 张') : '';
+    var images = imgLib.images || [];
+    if (imgLib.countEl) imgLib.countEl.textContent = images.length ? ('共 ' + images.length + ' 张') : '';
 
-    if (!state.images.length) {
+    if (!images.length) {
       box.appendChild(UI.el('div', { class: 'ck-img-empty', text: '还没有图片。添加后，聊天时角色可以主动发给你。' }));
       return;
     }
 
     var grid = UI.el('div', { class: 'ck-img-grid' });
-    state.images.forEach(function (rec) {
+    images.forEach(function (rec) {
       var cell = UI.el('div', { class: 'ck-img-cell', attrs: { role: 'button', tabindex: '0' } });
       cell.appendChild(UI.el('img', { attrs: { src: rec.dataUri, alt: rec.name || '图片', loading: 'lazy' } }));
       cell.appendChild(UI.el('div', { class: 'ck-img-cell-name', text: rec.name || '图片' }));
@@ -330,8 +514,9 @@
   }
 
   function addLibraryImage() {
-    if (state.imgBusy) return;
-    if (!state.id) {
+    if (imgLib.busy) return;
+    var id = imgLib.characterId || state.id;
+    if (!id) {
       UI.toast('请先保存角色后再添加图片', 'error');
       return;
     }
@@ -341,23 +526,42 @@
       return;
     }
 
-    state.imgBusy = true;
+    setImgBusy(true);
+    var added = false;
+    var count = 0;
+
     Promise.resolve(M.pickImage())
       .then(function (att) {
-        if (!att) return null; // 用户取消
-        return M.addImage(state.id, att, { source: 'user', caption: '' });
+        if (!att) return null; // 用户取消：保持弹窗
+        return Promise.resolve(M.addImage(id, att, { source: 'user', caption: '' })).then(function (rec) {
+          added = !!rec;
+          return null;
+        });
       })
-      .then(function (rec) {
-        if (!rec) return null;
-        UI.toast('已添加到图片库', 'ok');
-        return refreshImages();
+      .then(function () {
+        if (!added) return null;
+        // 先刷新网格与计数，再自动关闭弹窗（用户要求：添加后自动消失）
+        return refreshLibrary().then(function (rows) {
+          count = (rows || []).length;
+          return null;
+        });
+      })
+      .then(function () {
+        setImgBusy(false);
+        if (!added) return null;
+        closeImageLibrary();
+        if (state.id === id && state.root && state.card && !state.destroyed) {
+          state.images = (imgLib.images || []).slice();
+          render();
+        }
+        UI.toast('已添加 1 张到图片库（共 ' + count + ' 张）', 'ok');
+        return null;
       })
       .catch(function (err) {
         console.error('[characterEdit] 添加图片失败', err);
+        setImgBusy(false);
+        // 失败时保持弹窗打开，方便换一张再试
         UI.toast('添加图片失败：' + ((err && err.message) || '未知错误'), 'error');
-      })
-      .then(function () {
-        state.imgBusy = false;
       });
   }
 
@@ -445,9 +649,10 @@
   }
 
   function helpAddImage() {
+    var name = imgLib.name || (state.card && state.card.name) || '这个角色';
     if (App.Help && typeof App.Help.open === 'function') {
       App.Help.open({ source: 'character_images', page: PAGE });
-      UI.toast('可以在引导助手里发送图片，让它帮你加到「' + (state.card && state.card.name ? state.card.name : '这个角色') + '」的图片库', 'ok', 3200);
+      UI.toast('可以在引导助手里发送图片，让它帮你加到「' + name + '」的图片库', 'ok', 3200);
     } else {
       UI.toast('引导助手暂不可用', 'error');
     }
@@ -687,6 +892,8 @@
   function updateGuide() {
     if (!state.page || !state.page.guide || !state.card) return;
     var filled = { name: !!state.card.name, type: true };
+    filled.gender = !!normalizeGender(state.card.gender);
+    filled.godMode = !!state.godMode;
     filled.characterImages = (state.images || []).length > 0;
     filled.greetings = !!(String(state.card.firstMessage || '').trim() || altGreetingsOf(state.card).length);
     var missing = [];
@@ -955,6 +1162,8 @@
     if (!card.systemPrompt || (card.fieldOrigin || {}).systemPrompt !== 'user') {
       card.systemPrompt = Kit.rebuildSystemPrompt(card) || card.systemPrompt || '';
     }
+    card.gender = normalizeGender(card.gender);
+    card.godMode = !!state.godMode;
     card.updatedAt = now;
     if (!card.createdAt) card.createdAt = now;
 
@@ -997,6 +1206,10 @@
       state.imgModal = null;
       state.imgGridBox = null;
       state.imgCountEl = null;
+      state.godMode = false;
+      imgLib.characterId = '';
+      imgLib.name = '';
+      imgLib.images = [];
       state.greetModal = null;
       state.id = (params && params.id) || '';
 
@@ -1005,10 +1218,8 @@
       page.onDestroy(function () {
         state.destroyed = true;
         closeGreetModal();
-        if (state.imgModal) {
-          try { state.imgModal.close(); } catch (e) { /* 忽略 */ }
-          state.imgModal = null;
-        }
+        if (imgLib.modal) closeImageLibrary();
+        state.imgModal = null;
         state.imgGridBox = null;
         state.imgCountEl = null;
       });
@@ -1052,6 +1263,7 @@
         if (!Array.isArray(state.card.specialty)) state.card.specialty = [];
         if (!Array.isArray(state.card.duties)) state.card.duties = [];
         if (!Array.isArray(state.card.exampleDialogues)) state.card.exampleDialogues = [];
+        state.godMode = !!state.card.godMode;
         state.loaded = true;
 
         page.setTitle('编辑角色');
@@ -1074,4 +1286,11 @@
       });
     }
   });
+
+  // 供角色列表等入口单独打开某个角色的图片库：
+  //   App.ImageLibrary.open(characterId)
+  App.ImageLibrary = {
+    open: openImageLibrary,
+    close: closeImageLibrary
+  };
 })();

@@ -109,6 +109,7 @@
     var ready = App.UI.applyStoredTheme()
       .catch(function () { return App.UI.theme(); })
       .then(function () { return App.DB.ready(); })
+      .then(function () { return (App.Style && App.Style.init ? App.Style.init() : null); })
       .then(function () { return seedBuiltins(); });
 
     ready.then(function () {

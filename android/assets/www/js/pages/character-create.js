@@ -28,6 +28,26 @@
 
   var STEP_NAMES = ['选择类型', '选择世界观', '填写基本信息', 'AI 补全', '预览角色卡'];
 
+  /* 性别（characters.gender）：'female' | 'male' | 'other' | ''（未设定） */
+  var GENDERS = [
+    { id: 'female', name: '女' },
+    { id: 'male', name: '男' },
+    { id: 'other', name: '其他' },
+    { id: '', name: '不设定' }
+  ];
+
+  function normalizeGender(v) {
+    return (v === 'female' || v === 'male' || v === 'other') ? v : '';
+  }
+
+  function genderText(v) {
+    var g = normalizeGender(v);
+    if (g === 'female') return '女';
+    if (g === 'male') return '男';
+    if (g === 'other') return '其他';
+    return '';
+  }
+
   var TYPE_CARDS = (App.Data && App.Data.CHARACTER_TYPES) || [
     { id: 'companion', name: '陪聊角色', icon: 'user', desc: '有性格、习惯和开场白，像真人一样陪你聊天。' },
     { id: 'assistant', name: '领域助手', icon: 'bot', desc: '在某个领域里专业回答，不扮演、不说套话。' }
@@ -53,6 +73,8 @@
 
     name: '',
     personality: '',
+    gender: '',        // 'female' | 'male' | 'other' | ''（未设定）
+    godMode: false,    // 上帝模式：TA 知道自己只是虚拟角色
     habits: '',
     extra: '',
 
@@ -104,6 +126,8 @@
       worldviewId: state.selectedWvId,
       name: state.name,
       personality: state.personality,
+      gender: state.gender,
+      godMode: !!state.godMode,
       habits: state.habits,
       extra: state.extra,
       card: state.card,
@@ -142,10 +166,15 @@
     state.selectedWvId = d.worldviewId || '';
     state.name = d.name || '';
     state.personality = d.personality || '';
+    state.gender = normalizeGender(d.gender) || normalizeGender(state.card && state.card.gender);
+    state.godMode = d.godMode != null ? !!d.godMode : !!(state.card && state.card.godMode);
     state.habits = d.habits || '';
     state.extra = d.extra || '';
     state.card = d.card || null;
-    if (state.card) ensureAltGreetings(state.card);
+    if (state.card) {
+      ensureAltGreetings(state.card);
+      state.card.gender = state.gender || normalizeGender(state.card.gender);
+    }
     state.versions = Array.isArray(d.versions) ? d.versions : [];
     state.versionIndex = typeof d.versionIndex === 'number' ? d.versionIndex : state.versions.length - 1;
     state.raw = d.raw || '';
@@ -336,6 +365,8 @@
     var missing = [];
     if (state.name) filled.name = true; else missing.push('name');
     if (state.personality) filled.personality = true; else missing.push('personality');
+    if (state.gender) filled.gender = true;
+    if (state.godMode) filled.godMode = true;
     if (state.habits) filled.habits = true;
     if (state.extra) filled.extra = true;
     if (state.type === 'assistant') {
@@ -576,12 +607,19 @@
         ),
         UI.el('div', { class: 'ck-wv-summary', text: wv.summary || '' })
       );
+      card.setAttribute('data-wv-id', wv.id);
       card.addEventListener('click', function () {
         if (state.selectedWvId === wv.id) return;
         state.selectedWvId = wv.id;
         state.worldview = (wv.id === 'wv-none') ? null : wv;
         saveSoon();
-        render();
+        // 原地更新选中态与摘要，避免整页重建导致列表滚动位置跳动与点击卡顿
+        Array.prototype.forEach.call(listBox.querySelectorAll('.ck-wv-card'), function (el) {
+          var on = el.getAttribute('data-wv-id') === wv.id;
+          el.classList.toggle('active', on);
+          el.setAttribute('aria-pressed', on ? 'true' : 'false');
+        });
+        paintPreview();
       });
       listBox.appendChild(card);
     });
@@ -596,17 +634,22 @@
     });
     body.appendChild(UI.el('div', { class: 'ck-pad', attrs: { style: 'padding-top:4px;padding-bottom:8px' } }, createWv));
 
-    // 摘要预览
-    var wv = selectedWorldviewForPrompt();
-    if (wv) {
-      var preview = UI.el('div', { class: 'ck-wv-preview' },
-        UI.el('div', { class: 'ck-wv-preview-title', text: '世界观摘要' }),
-        UI.el('div', { text: P && P.worldviewText ? P.worldviewText(wv) : (wv.summary || '') })
-      );
-      body.appendChild(preview);
-    } else {
-      body.appendChild(UI.el('div', { class: 'ck-note', text: '当前不绑定世界观，角色会按现代日常语境补全。' }));
+    // 摘要预览（选中变化时只重画这一块）
+    var previewSlot = UI.el('div', { class: 'ck-wv-preview-slot' });
+    body.appendChild(previewSlot);
+    function paintPreview() {
+      previewSlot.innerHTML = '';
+      var wv = selectedWorldviewForPrompt();
+      if (wv) {
+        previewSlot.appendChild(UI.el('div', { class: 'ck-wv-preview' },
+          UI.el('div', { class: 'ck-wv-preview-title', text: '世界观摘要' }),
+          UI.el('div', { text: P && P.worldviewText ? P.worldviewText(wv) : (wv.summary || '') })
+        ));
+      } else {
+        previewSlot.appendChild(UI.el('div', { class: 'ck-note', text: '当前不绑定世界观，角色会按现代日常语境补全。' }));
+      }
     }
+    paintPreview();
 
     return body;
   }
@@ -645,6 +688,84 @@
     );
   }
 
+  // 性别分段选择（女 / 男 / 其他 / 不设定）
+  function genderRow() {
+    var value = state.gender || normalizeGender(state.card && state.card.gender);
+    var seg = UI.el('div', {
+      class: 'segmented ck-gender-seg',
+      attrs: { role: 'group', 'aria-label': '角色性别', 'data-guide-focus': 'gender' }
+    });
+    GENDERS.forEach(function (g) {
+      var active = value === g.id;
+      var btn = UI.el('button', {
+        class: 'seg' + (active ? ' active' : ''),
+        type: 'button',
+        text: g.name,
+        attrs: { 'data-gender': g.id || 'none', 'aria-pressed': active ? 'true' : 'false' }
+      });
+      btn.addEventListener('click', function () {
+        state.gender = g.id;
+        if (state.card) state.card.gender = g.id;
+        // 原地更新选中态，不整页 render
+        var all = seg.querySelectorAll('.seg');
+        Array.prototype.forEach.call(all, function (el) {
+          var on = el.getAttribute('data-gender') === (g.id || 'none');
+          if (on) el.classList.add('active'); else el.classList.remove('active');
+          el.setAttribute('aria-pressed', on ? 'true' : 'false');
+        });
+        saveSoon();
+        updateGuide();
+      });
+      seg.appendChild(btn);
+    });
+
+    return UI.el('div', { class: 'field ck-gender-field' },
+      UI.el('label', {}, UI.el('span', { text: '性别' })),
+      seg,
+      UI.el('div', { class: 'hint', text: '可不填；AI 补全时不会覆盖你选的性别。' })
+    );
+  }
+
+  // 上帝模式开关（默认关：TA 知道自己只是虚拟角色）
+  function godModeCreateRow() {
+    var on = !!state.godMode;
+    var sw = UI.el('span', {
+      class: 'switch' + (on ? ' on' : ''),
+      attrs: { role: 'switch', 'aria-checked': on ? 'true' : 'false', 'aria-label': '上帝模式' }
+    });
+    var head = UI.el('div', { class: 'row' },
+      UI.el('label', { class: 'grow', text: '上帝模式' }),
+      sw
+    );
+    head.addEventListener('click', function () {
+      state.godMode = !state.godMode;
+      var checked = !!state.godMode;
+      if (checked) sw.classList.add('on'); else sw.classList.remove('on');
+      sw.setAttribute('aria-checked', checked ? 'true' : 'false');
+      saveSoon();
+      updateGuide();
+    });
+    return UI.el('div', {
+      class: 'field ck-godmode-field',
+      attrs: { 'data-guide-focus': 'characterGodMode' }
+    },
+      head,
+      UI.el('div', { class: 'hint', text: '开启后 TA 知道自己只是虚拟角色，可以和你聊这件事。' })
+    );
+  }
+
+  // 用户选的性别优先；用户没选时尽量沿用角色卡上的合法值
+  function applyGenderFromUser(card) {
+    if (!card) return card;
+    if (state.gender) {
+      card.gender = state.gender;
+    } else {
+      card.gender = normalizeGender(card.gender);
+      if (card.gender) state.gender = card.gender;
+    }
+    return card;
+  }
+
   function step3Body() {
     var body = UI.el('div', {});
     body.appendChild(UI.el('div', { class: 'ck-step-head' },
@@ -671,6 +792,12 @@
       value: state.personality,
       onInput: function (v) { state.personality = v; }
     }));
+
+    // 性别（可空）
+    form.appendChild(genderRow());
+
+    // 上帝模式（默认关）
+    form.appendChild(godModeCreateRow());
 
     form.appendChild(lightField({
       label: '习惯（可空）',
@@ -1075,6 +1202,7 @@
       if (res && res.ok && res.card) {
         var card = res.card;
         ensureAltGreetings(card); // AI 返回可能没有 alternateGreetings
+        applyGenderFromUser(card); // 用户选的性别优先，AI 不覆盖
         state.busy = false;
         state.genPhase = 'done';
         state.card = card;
@@ -1142,6 +1270,8 @@
     card.type = state.type;
     card.name = String(state.name || '').trim();
     card.personality = String(state.personality || '').trim();
+    card.gender = normalizeGender(state.gender);
+    card.godMode = !!state.godMode;
     card.habits = String(state.habits || '').trim();
     card.background = '';
     if (state.type === 'assistant') {
@@ -1238,6 +1368,7 @@
           // 用克隆回滚，避免之后的编辑改坏已保存的旧版本
           state.card = Kit.clone(ver.card);
           ensureAltGreetings(state.card);
+          applyGenderFromUser(state.card); // 回滚后仍保留用户选择的性别
           state.meta = { providerId: ver.providerId || '', model: ver.model || '', at: ver.at || 0 };
           saveSoon();
           render();
@@ -1281,6 +1412,12 @@
         UI.el('div', { text: String(draft.worldviewFit) })
       ));
     }
+
+    // 性别 / 上帝模式（预览展示，未设定时不显示性别）
+    var previewMeta = [];
+    if (genderText(card.gender)) previewMeta.push(Kit.fieldRow({ label: '性别', value: genderText(card.gender), editable: false }));
+    previewMeta.push(Kit.fieldRow({ label: '上帝模式', value: state.godMode ? '开' : '关', editable: false }));
+    body.appendChild(UI.el('div', { class: 'ck-field-list' }, previewMeta));
 
     // 字段列表
     var list = UI.el('div', { class: 'ck-field-list' });
@@ -1482,6 +1619,7 @@
       if (!newCard.alternateGreetings.length && prevAlts.length) {
         newCard.alternateGreetings = normalizeAltGreetings(prevAlts);
       }
+      applyGenderFromUser(newCard); // 用户选的性别优先，AI 不覆盖
       state.card = newCard;
       state.meta = { providerId: guide.id, model: model, at: Date.now() };
       state.versions.push({
@@ -1532,6 +1670,8 @@
         ? P.worldviewSnapshotText(selectedWorldviewForPrompt())
         : ''),
       personality: card.personality || '',
+      gender: normalizeGender(card.gender) || normalizeGender(state.gender),
+      godMode: !!state.godMode,
       habits: card.habits || '',
       background: card.background || '',
       speechStyle: card.speechStyle || '',

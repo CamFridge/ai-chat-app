@@ -124,7 +124,7 @@ async function waitFor(page, expr, timeout = 8000) {
     return true;
   })()`);
 
-  r = await page.eval(jsClick('.ck-wizard-foot button', 'AI 补全'));
+  r = await page.eval(jsClick('.ck-action-row button', 'AI 补全'));
   console.log('[3] 开始 AI 补全:', r);
   const live = await waitFor(page, `(() => {
     var p = document.querySelector('.ck-gen-preview');
@@ -135,7 +135,7 @@ async function waitFor(page, expr, timeout = 8000) {
   await page.screenshot(path.join(SHOTS, '70-wv-gen-live.png'));
 
   // 停止生成
-  r = await page.eval(jsClick('.ck-wizard-foot button', '停止生成'));
+  r = await page.eval(jsClick('.ck-action-row button', '停止生成'));
   console.log('[4] 停止生成:', r);
   const stopped = await waitFor(page, `(() => (document.body.innerText || '').indexOf('已停止生成') >= 0)()`, 5000);
   console.log('   已停止:', stopped);
@@ -143,7 +143,7 @@ async function waitFor(page, expr, timeout = 8000) {
   await page.screenshot(path.join(SHOTS, '71-wv-gen-stopped.png'));
 
   // 继续生成 → 让它跑完
-  r = await page.eval(jsClick('.ck-wizard-foot button', '继续生成'));
+  r = await page.eval(jsClick('button', '继续生成'));
   console.log('[5] 继续生成:', r);
   const done = await waitFor(page, `(() => !!document.querySelector('.ck-preview-name'))()`, 12000);
   console.log('   补全完成进入预览:', done);
@@ -165,3 +165,4 @@ async function waitFor(page, expr, timeout = 8000) {
   console.log('截图目录:', SHOTS);
   process.exit(0);
 })().catch((e) => { console.error('FAILED', e); process.exit(1); });
+

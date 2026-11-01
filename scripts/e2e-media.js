@@ -148,12 +148,18 @@ async function waitFor(page, expr, timeoutMs = 10000, intervalMs = 150) {
   let counts = await page.eval(jsCounts);
   if (counts.images[0] && counts.images[0].source === 'user') ok('source 记为 user');
   else bad('source 异常：' + JSON.stringify(counts.images[0]));
-  const cellShown = await waitFor(page, `(() => document.querySelectorAll('.ck-img-cell').length === 1)()`, 4000);
+  const modalClosed = await waitFor(page, `(() => { var m = document.querySelector('.modal'); return !m || Number(getComputedStyle(m).opacity) < 0.05; })()`, 4000);
+  if (modalClosed) ok('添加图片后弹窗自动关闭');
+  else bad('添加图片后弹窗没有自动关闭');
+  await sleep(350);
+  if ((await page.eval(jsClick('[data-guide-focus="characterImages"]'))) === 'ok') ok('重新打开图片库');
+  else bad('重新打开图片库失败');
+  const cellShown = await waitFor(page, `(() => document.querySelectorAll('.modal .ck-img-cell').length === 1)()`, 4000);
   if (cellShown) ok('图片格已渲染');
   else bad('图片格未渲染');
   await page.screenshot(path.join(SHOTS, '80-media-library.png'));
 
-  if ((await page.eval(jsClick('.ck-img-cell'))) === 'ok') ok('点击缩略图');
+  if ((await page.eval(jsClick('.modal .ck-img-cell'))) === 'ok') ok('点击缩略图');
   else bad('点不到缩略图');
   const previewed = await waitFor(page, `(() => !!document.querySelector('.media-preview-img'))()`, 4000);
   if (previewed) ok('大图预览已打开');

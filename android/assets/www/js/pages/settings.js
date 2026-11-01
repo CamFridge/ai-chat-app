@@ -47,6 +47,10 @@
         proactiveIntervalMin: PROACTIVE_DEFAULT_INTERVAL,
         proactiveRandomMin: PROACTIVE_RANDOM_MIN_DEFAULT,
         proactiveRandomMax: PROACTIVE_RANDOM_MAX_DEFAULT,
+        // v1.3.0 聊天界面（App.Style 为数据源，这里保存兜底副本）
+        chatStyle: 'wechat',
+        chatBg: '',
+        userAvatar: '',
         bubbleEnabled: true,
         bubblePosition: BUBBLE_DEFAULT_POSITION,
         guideProvider: null,
@@ -297,6 +301,11 @@
             map.bubble_position && typeof map.bubble_position === 'object'
               ? map.bubble_position
               : BUBBLE_DEFAULT_POSITION;
+
+          // v1.3.0 聊天界面：样式 / 背景 / 我的头像
+          state.chatStyle = map.chat_style === 'imessage' || map.chat_style === 'qq' ? map.chat_style : 'wechat';
+          state.chatBg = typeof map.chat_bg === 'string' ? map.chat_bg : '';
+          state.userAvatar = typeof map.user_avatar === 'string' ? map.user_avatar : '';
 
           state.guideProvider =
             findById(state.providers, map.guide_provider_id) ||
@@ -692,6 +701,197 @@
           });
       }
 
+      // ---------- 聊天界面（v1.3.0：样式 / 背景 / 我的头像，数据源 App.Style） ----------
+      function styleApi() {
+        return App.Style || null;
+      }
+
+      function requireStyle() {
+        var S = styleApi();
+        if (!S || typeof S.setStyle !== 'function') {
+          toast('聊天界面模块不可用，请重启 App');
+          return null;
+        }
+        return S;
+      }
+
+      function chatStyleId() {
+        var S = styleApi();
+        try {
+          if (S && typeof S.getStyle === 'function') return S.getStyle();
+        } catch (e) {
+          /* 用兜底副本 */
+        }
+        return state.chatStyle;
+      }
+
+      function chatStyleLabel() {
+        var S = styleApi();
+        var id = chatStyleId();
+        try {
+          if (S && typeof S.styleName === 'function') return S.styleName(id);
+        } catch (e) {
+          /* 用兜底文案 */
+        }
+        var fallback = { wechat: '微信', imessage: 'iMessage', qq: 'QQ' };
+        return fallback[id] || '微信';
+      }
+
+      function hasChatBg() {
+        var S = styleApi();
+        try {
+          if (S && typeof S.getBackground === 'function') return !!S.getBackground();
+        } catch (e) {
+          /* 用兜底副本 */
+        }
+        return !!state.chatBg;
+      }
+
+      function hasUserAvatar() {
+        var S = styleApi();
+        try {
+          if (S && typeof S.getUserAvatar === 'function') return !!S.getUserAvatar();
+        } catch (e) {
+          /* 用兜底副本 */
+        }
+        return !!state.userAvatar;
+      }
+
+      function pickStyleImage() {
+        var M = App.Media;
+        if (!M || typeof M.pickImage !== 'function') return Promise.reject(new Error('相册功能不可用'));
+        return Promise.resolve(M.pickImage());
+      }
+
+      // 通用选择面板：优先 UI.sheet，失败时用内置兜底面板；返回选中的 value
+      function openPickSheet(title, items, selected) {
+        var task;
+        try {
+          if (UI && typeof UI.sheet === 'function') {
+            task = Promise.resolve(UI.sheet({ title: title, items: items, selected: selected }));
+          } else {
+            task = fallbackPick(title, items);
+          }
+        } catch (e) {
+          task = fallbackPick(title, items);
+        }
+        return Promise.resolve(task).then(function (picked) {
+          if (picked === null || picked === undefined) return null;
+          return normalizePick(picked);
+        });
+      }
+
+      function chooseChatStyle() {
+        var S = requireStyle();
+        if (!S) return;
+        var styles =
+          Array.isArray(S.STYLES) && S.STYLES.length
+            ? S.STYLES
+            : [{ id: 'wechat', name: '微信', desc: '绿色气泡，默认样式' }];
+        var items = styles.map(function (s) {
+          return { id: s.id, value: s.id, label: s.name || s.id, desc: s.desc || '' };
+        });
+        openPickSheet('聊天界面样式', items, chatStyleId())
+          .then(async function (id) {
+            if (!id || id === chatStyleId()) return;
+            await S.setStyle(id);
+            state.chatStyle = id;
+            state.settingsMap.chat_style = id;
+            if (!destroyed) render();
+            toast('已切换为' + chatStyleLabel());
+          })
+          .catch(function (e) {
+            toast('切换失败：' + errText(e));
+            if (!destroyed) render();
+          });
+      }
+
+      // 背景 / 头像共用的相册选择 -> 写入流程
+      function pickAndApplyImage(kind) {
+        var S = requireStyle();
+        if (!S) return;
+        var isBg = kind === 'bg';
+        var setter = isBg ? S.setBackground : S.setUserAvatar;
+        if (typeof setter !== 'function') {
+          toast('聊天界面模块不可用，请重启 App');
+          return;
+        }
+        pickStyleImage()
+          .then(async function (att) {
+            if (!att || !att.dataUri) return; // 用户取消
+            await setter.call(S, att.dataUri);
+            if (isBg) {
+              state.chatBg = att.dataUri;
+              state.settingsMap.chat_bg = att.dataUri;
+            } else {
+              state.userAvatar = att.dataUri;
+              state.settingsMap.user_avatar = att.dataUri;
+            }
+            if (!destroyed) render();
+            toast(isBg ? '聊天背景已更新' : '头像已更新');
+          })
+          .catch(function (e) {
+            toast((isBg ? '设置背景失败：' : '设置头像失败：') + errText(e));
+          });
+      }
+
+      // 恢复默认：背景 / 头像共用
+      function clearStyleImage(kind) {
+        var S = requireStyle();
+        if (!S) return;
+        var isBg = kind === 'bg';
+        var clearer = isBg ? S.clearBackground : S.clearUserAvatar;
+        if (typeof clearer !== 'function') {
+          toast('聊天界面模块不可用，请重启 App');
+          return;
+        }
+        Promise.resolve(clearer.call(S))
+          .then(function () {
+            if (isBg) {
+              state.chatBg = '';
+              state.settingsMap.chat_bg = '';
+            } else {
+              state.userAvatar = '';
+              state.settingsMap.user_avatar = '';
+            }
+            if (!destroyed) render();
+            toast(isBg ? '已恢复默认聊天背景' : '已恢复默认头像');
+          })
+          .catch(function (e) {
+            toast('恢复默认失败：' + errText(e));
+          });
+      }
+
+      function chooseChatBg() {
+        var items = [{ id: 'pick', value: 'pick', label: '从相册选择', desc: '选择一张图片作为聊天页背景' }];
+        if (hasChatBg()) {
+          items.push({ id: 'clear', value: 'clear', label: '恢复默认', desc: '清除当前自定义背景', danger: true });
+        }
+        openPickSheet('聊天背景', items, '')
+          .then(function (action) {
+            if (action === 'pick') pickAndApplyImage('bg');
+            else if (action === 'clear') clearStyleImage('bg');
+          })
+          .catch(function (e) {
+            toast('操作失败：' + errText(e));
+          });
+      }
+
+      function chooseUserAvatar() {
+        var items = [{ id: 'pick', value: 'pick', label: '从相册选择', desc: '选择一张图片作为你的头像' }];
+        if (hasUserAvatar()) {
+          items.push({ id: 'clear', value: 'clear', label: '恢复默认', desc: '恢复为默认头像', danger: true });
+        }
+        openPickSheet('我的头像', items, '')
+          .then(function (action) {
+            if (action === 'pick') pickAndApplyImage('avatar');
+            else if (action === 'clear') clearStyleImage('avatar');
+          })
+          .catch(function (e) {
+            toast('操作失败：' + errText(e));
+          });
+      }
+
       function render() {
         if (destroyed) return;
         wrap.textContent = '';
@@ -765,6 +965,36 @@
               chev: true,
               dataset: { guideFocus: 'mediaHelp' },
               onClick: openMediaHelp
+            })
+          ])
+        );
+
+        // 聊天界面（v1.3.0）：样式 / 背景 / 我的头像
+        wrap.appendChild(
+          group('聊天界面', [
+            cell({
+              title: '聊天界面样式',
+              sub: '聊天页气泡风格与配色，切换后立即生效',
+              value: chatStyleLabel(),
+              chev: true,
+              dataset: { guideFocus: 'chatStyle' },
+              onClick: chooseChatStyle
+            }),
+            cell({
+              title: '聊天背景',
+              sub: '从相册选择一张图片作为聊天页背景',
+              value: hasChatBg() ? '已设置' : '默认',
+              chev: true,
+              dataset: { guideFocus: 'chatBg' },
+              onClick: chooseChatBg
+            }),
+            cell({
+              title: '我的头像',
+              sub: '聊天中显示在你自己消息旁的头像',
+              value: hasUserAvatar() ? '已设置' : '默认',
+              chev: true,
+              dataset: { guideFocus: 'userAvatar' },
+              onClick: chooseUserAvatar
             })
           ])
         );
