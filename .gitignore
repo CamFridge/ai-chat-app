@@ -1,0 +1,10 @@
+build/
+gen/
+classes/
+dex/
+*.idsig
+keystore/
+tools/
+.avd/
+.android-home/
+node_modules/

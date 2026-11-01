@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1, user-scalable=no">
+  <meta name="theme-color" content="#07c160">
+  <meta name="format-detection" content="telephone=no">
+  <title>AI 聊天</title>
+  <link rel="stylesheet" href="css/base.css">
+  <link rel="stylesheet" href="css/pages-config.css">
+  <link rel="stylesheet" href="css/pages-chat.css">
+  <link rel="stylesheet" href="css/pages-char.css">
+  <link rel="stylesheet" href="css/pages-guide.css">
+  <script>
+    /* 首屏主题预置：避免打开时闪白/闪黑（正式值在 IndexedDB 中，此处为快速缓存） */
+    try {
+      var t = localStorage.getItem('aichat.theme') || 'light';
+      if (t === 'dark' || t === 'amoled' || t === 'light') document.documentElement.setAttribute('data-theme', t);
+    } catch (e) {}
+  </script>
+</head>
+<body>
+  <div id="app" class="shell">
+    <header class="navbar" id="navbar">
+      <button class="nav-back" id="nav-back" type="button" aria-label="返回"></button>
+      <h1 class="nav-title" id="nav-title"></h1>
+      <div class="nav-actions" id="nav-actions"></div>
+    </header>
+    <main class="page-body" id="page-root"></main>
+    <nav class="tabbar" id="tabbar"></nav>
+    <div class="boot" id="boot">
+      <div class="boot-logo">AI</div>
+      <div class="boot-name">AI 聊天</div>
+      <div class="boot-tip">正在启动…</div>
+    </div>
+  </div>
+  <div id="overlay-root"></div>
+
+  <script src="js/bridge.js"></script>
+  <script src="js/util.js"></script>
+  <script src="js/db.js"></script>
+  <script src="js/router.js"></script>
+  <script src="js/ui.js"></script>
+  <script src="js/api.js"></script>
+  <script src="js/data/worldviews.js"></script>
+  <script src="js/data/presets.js"></script>
+  <script src="js/data/faq.js"></script>
+  <script src="js/prompts.js"></script>
+  <script src="js/guide.js"></script>
+  <script src="js/pages/onboarding.js"></script>
+  <script src="js/pages/api-list.js"></script>
+  <script src="js/pages/api-edit.js"></script>
+  <script src="js/pages/settings.js"></script>
+  <script src="js/pages/chat-list.js"></script>
+  <script src="js/pages/chat.js"></script>
+  <script src="js/pages/preset-edit.js"></script>
+  <script src="js/pages/characters.js"></script>
+  <script src="js/pages/character-create.js"></script>
+  <script src="js/pages/character-edit.js"></script>
+  <script src="js/pages/worldviews.js"></script>
+  <script src="js/pages/help.js"></script>
+  <script src="js/pages/about.js"></script>
+  <script src="js/bubble.js"></script>
+  <script src="js/main.js"></script>
+</body>
+</html>
