@@ -296,7 +296,30 @@
       } else {
         c = m.content || '';
       }
-      return { role: m.role === 'ai' ? 'assistant' : m.role, content: String(c || '') };
+      var role = m.role === 'ai' ? 'assistant' : m.role;
+      var atts = Array.isArray(m.attachments) ? m.attachments : [];
+      if (!atts.length) return { role: role, content: String(c || '') };
+
+      // 文件：内容拼进文本；图片：走 OpenAI 兼容的多模态 content 数组
+      var text = String(c || '');
+      var images = [];
+      atts.forEach(function (att) {
+        if (!att || !att.kind) return;
+        if (att.kind === 'image' && att.dataUri) {
+          images.push(att);
+        } else if (att.kind === 'file' && att.text) {
+          text += (text ? '\n\n' : '') + '【用户发送的文件：' + String(att.name || '文件') + '】\n' + String(att.text);
+          if (att.truncated) text += '\n（文件较长，以上为前 ' + String(att.text).length + ' 字）';
+        }
+      });
+      if (!images.length) return { role: role, content: text };
+
+      var parts = [];
+      parts.push({ type: 'text', text: text || '（用户发来一张图片，请结合图片内容回应）' });
+      images.forEach(function (att) {
+        parts.push({ type: 'image_url', image_url: { url: String(att.dataUri) } });
+      });
+      return { role: role, content: parts };
     }).filter(function (m) { return m.role === 'system' || m.role === 'user' || m.role === 'assistant'; });
     if (opts.maxMessages && msgs.length > opts.maxMessages) {
       var system = msgs.filter(function (m) { return m.role === 'system'; });

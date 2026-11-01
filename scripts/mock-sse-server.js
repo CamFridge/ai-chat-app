@@ -21,6 +21,7 @@ const server = http.createServer((req, res) => {
   let raw = '';
   req.on('data', (c) => { raw += c; });
   req.on('end', () => {
+    console.log(new Date().toISOString(), req.method, url, 'len=' + raw.length);
     if (req.method === 'GET' && /\/models$/.test(url)) {
       return json(res, 200, { object: 'list', data: [{ id: 'mock-null-model', object: 'model' }] });
     }
@@ -37,6 +38,7 @@ const server = http.createServer((req, res) => {
         'Cache-Control': 'no-cache',
         Connection: 'keep-alive'
       });
+      res.flushHeaders();
       let i = 0;
       const timer = setInterval(() => {
         if (i < chunks.length) {
@@ -48,7 +50,7 @@ const server = http.createServer((req, res) => {
         res.write('data: [DONE]\n\n');
         res.end();
       }, 120);
-      req.on('close', () => clearInterval(timer));
+      res.on('close', () => clearInterval(timer));
       return;
     }
     json(res, 404, { error: { message: 'not found: ' + url } });

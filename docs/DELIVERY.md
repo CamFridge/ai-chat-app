@@ -16,14 +16,26 @@
 
 **APK 指纹（最终正式构建）**
 
-- 大小：257,041 bytes（0.25 MB）
-- SHA-256：`F09FDE34899F2EC4ECA7B74BA3F908D971426E885ACC6E6087401B27F42FCC7A`
+- 大小：261,137 bytes（0.25 MB）
+- SHA-256：`473DADB01FE2350F9F7F52AC8D82C8576FFBC78756013401875AAC3EE4DE9435`
 - 包名：`com.aichat.client`；版本：`1.0.0`（versionCode 1）
 - minSdk 26（Android 8.0）/ targetSdk 34 / compileSdk 34
 - 签名：APK Signature Scheme v2 + v3（minSdk 26 下 v1/JAR 签名非必需），`zipalign` 4 字节对齐校验通过
 - 证书：`CN=AI Chat, OU=Mobile, O=AiChat, L=Shenzhen, ST=Guangdong, C=CN`
-- 证书 SHA-256：`04CEAB35D9CBFBBBA6C0CDBBA08CEC62E7622B4E316A690C41D8260A7D6E1B03`
+- 证书 SHA-256：`F4AAA0A8AC71DCA67AD95F290F106A44C12D694F8477305FB213828AB92D2590`
 - 发布版未开启 `android:debuggable`，WebView 调试端口只在调试构建中打开
+
+> 本次为修订版最终构建：工程此前被外部清理，已用 DSH 会话日志逐文件重放恢复并通过全部 E2E 回归；签名密钥库在重建时重新生成，因此证书指纹更新为上面这一条，安装时如遇「签名不一致」请先卸载旧版。构建完成后仍在 Android 13 模拟器上完成了设备端复验（见 §5.1）。
+
+### 1.1 本版修复与改进
+
+- **修复助手/角色回复出现「一串 null」**：Android `org.json` 的 `optString` 在字段值为 JSON `null` 时返回字面量 `"null"`，部分 OpenAI 兼容服务会发送 `{"delta":{"content":null}}`（推理模型、首包 role-only 等），旧实现把每个 null 分片当正文拼接。现在原生层 `Net.extractText` 用 `jstr()` 严格取值（跳过 null 与非字符串、忽略 `reasoning_content`），前端 `chat.js`/`api.js`/`prompts.js` 三层再防御非字符串增量，并新增 E2E 回归断言「null 增量被忽略：累计文本不含 "null"」。
+- **AI 补全生成页可用性改造**（角色创建 Step4 / 世界观自定义补全）：
+  - 生成中**实时显示**模型输出与「正在生成… 0.xs」「已接收 N 字 · 第 N 次尝试」，不再是假进度条，避免「像卡住」。
+  - **真实计时与阶段**：连接中 → 生成中 → 解析中 → 重试中，重试次数可见。
+  - **可随时停止**：停止后保留已生成内容，底部提供「继续生成 / 手动填写」，失败时一键「重试 / 换个 API 再试」，不用从头再来。
+  - 生成中底部只保留「停止生成」一个按钮，减少拥挤；错误态提供「查看模型原始输出」帮助手动填写。
+- 新增 `scripts/shots-worldview.js`（世界观生成态截图）与新版角色生成态截图（`build/shots/33a/33b/70-73`）。
 
 ## 2. 安装
 
@@ -85,7 +97,7 @@ adb install -r ai-chat-app\build\AI-Chat-1.0.0.apk
 | --- | --- | --- |
 | `scripts/audit.js` | 首次引导、4 Tab、6 个二级页、气泡挂载、控制台无错误 | 全部通过 |
 | `scripts/e2e-onboarding.js` | 6 步引导全流程 + 错误 Key + 不写库 + 重启免引导 | 26/26 |
-| `scripts/e2e-character.js` | 5 步创建向导 + 校验拦截 + 失败兜底 + 保存落库 + 自动开聊 | 20/20 |
+| `scripts/e2e-character.js` | 5 步创建向导 + 校验拦截 + 生成中实时输出/停止/继续 + 失败兜底 + 保存落库 + 自动开聊 | 28/28 |
 | `scripts/e2e-chat.js` | 历史渲染、流式、停止、落库、重新生成多版本 | 16/16 |
 | `scripts/e2e-guide.js` | 气泡上下文、扇形菜单、怎么走步骤、focus/navigate、纯文本兜底 | 14/14 |
 | `scripts/e2e-acceptance.js` | AI 补全成功路径、草稿恢复、改稿回滚、助手 prompt、1000 条性能、断网、错误帮助、引导会话隔离 | 32/32 |
@@ -94,23 +106,31 @@ adb install -r ai-chat-app\build\AI-Chat-1.0.0.apk
 
 ### 5.1 Android 设备端验证（API 33 / Android 13 模拟器）
 
-最终安装包已在 Android 13（API 33）模拟器上安装、启动并渲染；另用同签名调试构建通过 `adb forward` + WebView DevTools 协议跑设备端 E2E：
+> **复验状态**：本版构建已在 Windows 本机的 Android 13（API 33，x86_64）模拟器上完成安装、启动与设备端自动化验证（AEHD 2.2 加速驱动经用户授权后安装，emulator 37.2.13 + `system-images;android-33;google_apis;x86_64`）。设备端验证覆盖原生桥、Key 加密、流式回复、气泡、主题与返回键，并额外专项验证「null 修复」。
 
 | 项 | 结果 |
 | --- | --- |
-| `scripts/device-e2e.js`（原生桥 app.info / secure.set+get / ui.toast / ui.statusBar；免引导进主界面；4 Tab 文案；聊天页历史；发消息收流式回复；气泡扇面 4 项、上下文不含 Key/聊天正文；深色主题；角色/API/设置页；无未捕获异常） | **17/17** |
+| `scripts/device-e2e.js`（原生桥 app.info / secure.set+get / ui.toast / ui.statusBar；免引导进主界面；4 Tab 文案；聊天页历史；发消息收流式回复并落库；气泡扇面 4 项、上下文不含 Key/聊天正文；深色主题；角色/API/设置页；无未捕获异常） | **17/17** |
+| `scripts/device-null.js`（设备端 null 回归：mock SSE 的 `delta.content` 混入 JSON null / reasoning_content null，校验桥接层增量、UI 气泡与落库消息均不含 "null"） | **3/3** |
 | 系统返回键 | 二级页返回 = 弹栈（depth 2→1，不退出）；Tab 根返回 = 退出 App |
-| 发布包（最终 APK）安装启动 | 通过，`adb logcat` 无 FATAL/崩溃，界面与截图正常 |
+| 发布包安装启动 | 通过，`adb logcat` 无 FATAL/崩溃，界面与截图正常 |
 | Key 加密存储 | `run-as` 被拒（发布包不可调试），Key 仅存 SharedPreferences 密文 |
 
-设备截图：`ai-chat-app/build/device/`（`10-main-chat-list.png`、`11-chat.png`、`12-chat-reply.png`、`13-bubble-fan.png`、`14-chat-dark.png`、`15-settings-area.png`、`result.json`）。
-设备渲染图：`build/device-04-onboarding.png`、`build/device-06-release.png`。
+设备截图位于 `ai-chat-app/build/device/`：`10-main-chat-list.png`、`11-chat.png`、`12-chat-reply.png`（mock SSE 流式回复「你好，这是设备端测试回复。」，含 8 tokens 用量）、`13-bubble-fan.png`、`14-chat-dark.png`、`15-settings-area.png`、`20-null-regression.png`、`result.json`。设备测试用 mock SSE 服务通过 `adb reverse tcp:8899 tcp:8899` 暴露到设备 `127.0.0.1:8899`（脚本：`scripts/mock-sse-server.js`、`scripts/device-e2e.js`、`scripts/device-null.js`）。
 
 > 说明：个别模拟器 ROM（本次 JellyDroid API33 镜像）的 AssetManager 对 `assets/` 子目录返回反斜杠路径，`serveAsset` 已内置 `/`→`\` 双分隔符兜底并在该镜像上验证；标准 Android 设备走正常正斜杠路径，不受影响。
 
+### 5.2 「一串 null」修复的验证方式
+
+用三层独立验证覆盖原生、设备与前端交互：
+
+1. **设备端真机回归**（`scripts/device-null.js`，Android 13 模拟器）：mock SSE 服务在 `delta.content` 中混入 JSON `null` 并附带 `reasoning_content:null`，设备上运行结果——桥接层累计增量「你好，这是设备端测试回复。」无 "null"，聊天 UI 气泡与落库消息同样无 "null"（3/3 通过，截图 `build/device/20-null-regression.png`）；`scripts/device-e2e.js` 的聊天流式用例（`build/device/12-chat-reply.png`）同样基于该 mock SSE。
+2. **原生层 JVM 单测**（`scripts/jvm-null/`）：`make-test.js` 从 `android/src/com/aichat/client/Net.java` 原样提取 `jstr()` / `extractText()`，用桌面版 `org.json`（`json-20240303`）编译运行，13 项断言全部通过——`{"delta":{"content":null}}`、`message.content:null`、`text:null` 均返回空串；`reasoning_content` 被忽略；null 增量拼接后正文不含 "null"。
+3. **前端 E2E 回归**（`scripts/e2e-acceptance.js`）：mock 流式先吐 null/undefined/空串再吐正文，断言累计文本不含 "null" 且正常完成（32/32 通过）。
+
 ## 6. 已知限制
 
-- 浏览器/E2E 使用 mock 网络层验证交互与数据流；**真实第三方 API 服务（OpenAI/DeepSeek 等）未用真实 Key 做线上联调**，需要用户填入自己的 Key 后使用「测试连接」验证。原生桥（Key 加密存储、系统返回键、状态栏、Toast、导出/导入、图片选择）已在 Android 13 模拟器上验证（见 5.1）。
+- 浏览器/E2E 使用 mock 网络层验证交互与数据流；**真实第三方 API 服务（OpenAI/DeepSeek 等）未用真实 Key 做线上联调**，需要用户填入自己的 Key 后使用「测试连接」验证。原生桥（Key 加密存储、流式回复、系统返回键、状态栏、Toast）已在本版构建的 Android 13 模拟器上验证（见 5.1），其中网络请求同样走真实 Java 桥与真实 SSE 解析（对本地 mock SSE 服务）。
 - 图片选择（角色头像）与文件导入没有做自动化 UI 点击验证，代码路径已实现（`ACTION_GET_CONTENT` / `ACTION_OPEN_DOCUMENT`）。
 - 签名只输出 v2/v3 方案（minSdk 26 下现代设备可正常安装）；如需兼容 Android 7 以下需降低 minSdk 并让 apksigner 生成 v1 签名。
 - 聊天页未实现「右滑打开角色抽屉」手势（避免与系统返回手势冲突），入口在角色名/顶部菜单。

@@ -12,6 +12,9 @@ const fs = require('fs');
 const { CdpPage } = require('./cdp');
 
 const PORT = Number(process.argv[2] || 9333);
+// 设备上访问宿主 mock 服务：默认走 adb reverse tcp:8899 tcp:8899 暴露到设备 localhost；
+// 若设备网络可用（10.0.2.2 直连）可传 MOCK_BASE=http://10.0.2.2:8899/v1 覆盖。
+const MOCK_BASE = process.env.MOCK_BASE || 'http://127.0.0.1:8899/v1';
 const SHOTS = path.join(__dirname, '..', 'build', 'device');
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 let pass = 0;
@@ -44,7 +47,7 @@ async function waitFor(page, expr, timeout = 15000, interval = 200) {
   await page.eval(`(async () => {
     const now = Date.now();
     await App.DB.put('providers', {
-      id: 'prov_mock', name: '设备 mock API', baseUrl: 'http://10.0.2.2:8899/v1',
+      id: 'prov_mock', name: '设备 mock API', baseUrl: '${MOCK_BASE}',
       apiKey: '', defaultModel: 'mock-null-model', role: 'chat', isDefault: true,
       createdAt: now, updatedAt: now
     });
@@ -110,7 +113,7 @@ async function waitFor(page, expr, timeout = 15000, interval = 200) {
     const last = bubbles[bubbles.length - 1] || '';
     const all = document.body.innerText || '';
     const msgs = await App.DB.byIndex('messages', 'sessionId', 'sess_mock');
-    return { last: last, count: msgs.length, hasNullInBubbles: /null/.test(bubbles.join('\n')), saved: (msgs[msgs.length - 1] || {}) };
+    return { last: last, count: msgs.length, hasNullInBubbles: /null/.test(bubbles.join(String.fromCharCode(10))), saved: (msgs[msgs.length - 1] || {}) };
   })()`);
   if (ui && !ui.hasNullInBubbles && /你好/.test(ui.last)) ok('UI 层：气泡正文「' + ui.last.trim() + '」无 null');
   else bad('UI 层 null 回归失败：' + JSON.stringify(ui));

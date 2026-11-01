@@ -33,6 +33,7 @@
         presets: [],
         version: '',
         theme: 'light',
+        godMode: false,
         bubbleEnabled: true,
         bubblePosition: BUBBLE_DEFAULT_POSITION,
         guideProvider: null,
@@ -272,6 +273,7 @@
 
           var map = state.settingsMap;
           state.theme = map.theme || (UI && typeof UI.theme === 'function' ? UI.theme() : 'light') || 'light';
+          state.godMode = map.god_mode === true;
           state.bubbleEnabled = map.bubble_enabled !== false;
           state.bubblePosition =
             map.bubble_position && typeof map.bubble_position === 'object'
@@ -365,16 +367,15 @@
         }
         if (opts.right) children.push(opts.right);
         if (opts.chev) children.push(el('div', { class: 'chev cfg-chev', html: UI.icon('chev') }));
-        var node = el(
-          'div',
-          {
-            class:
-              'cell cfg-cell' +
-              (opts.danger ? ' cfg-danger' : '') +
-              (opts.onClick ? ' cfg-clickable' : '')
-          },
-          children
-        );
+        var cellAttrs = {
+          class:
+            'cell cfg-cell' +
+            (opts.danger ? ' cfg-danger' : '') +
+            (opts.onClick ? ' cfg-clickable' : '')
+        };
+        // 供引导气泡定位（如 data-guide-focus="godMode"）
+        if (opts.dataset && typeof opts.dataset === 'object') cellAttrs.dataset = opts.dataset;
+        var node = el('div', cellAttrs, children);
         if (opts.onClick) {
           node.addEventListener('click', function () {
             if (typeof opts.onClick === 'function') opts.onClick();
@@ -390,6 +391,7 @@
           sub: opts.sub,
           right: sw,
           chev: false,
+          dataset: opts.dataset,
           onClick: function () {
             opts.checked = !opts.checked;
             if (opts.checked) sw.classList.add('on');
@@ -459,6 +461,35 @@
         });
       }
 
+      // ---------- 角色与聊天 ----------
+      // 上帝模式：只写 settings.god_mode，聊天页加载时读取并拼进系统提示词
+      async function onGodModeToggle(checked) {
+        var next = !!checked;
+        try {
+          await DB.settings.set('god_mode', next);
+          state.godMode = next;
+          state.settingsMap.god_mode = next;
+          toast(next ? '已开启上帝模式' : '已关闭上帝模式');
+        } catch (e) {
+          // 写入失败时回滚开关视觉状态
+          toast('保存失败：' + errText(e));
+          if (!destroyed) render();
+        }
+      }
+
+      // 图片库/发图帮助入口（帮助抽屉由 help.js 提供）
+      function openMediaHelp() {
+        try {
+          if (App.Help && typeof App.Help.open === 'function') {
+            App.Help.open({ source: 'media_help' });
+          } else {
+            toast('帮助页暂不可用');
+          }
+        } catch (e) {
+          toast('打开帮助失败：' + errText(e));
+        }
+      }
+
       function render() {
         if (destroyed) return;
         wrap.textContent = '';
@@ -512,6 +543,26 @@
               value: state.genModel || '跟随 API 默认',
               chev: true,
               onClick: editGenModel
+            })
+          ])
+        );
+
+        // 角色与聊天（本次迭代新增：上帝模式开关 + 图片库/发图帮助入口）
+        wrap.appendChild(
+          group('角色与聊天', [
+            switchCell({
+              title: '上帝模式',
+              sub: '开启后角色知道自己只是虚拟角色，可以和你聊这件事',
+              checked: state.godMode,
+              dataset: { guideFocus: 'godMode' },
+              onChange: onGodModeToggle
+            }),
+            cell({
+              title: '图片库与发图',
+              sub: '在角色编辑页管理角色图片库；聊天页和帮助抽屉可以发送图片与文件',
+              chev: true,
+              dataset: { guideFocus: 'mediaHelp' },
+              onClick: openMediaHelp
             })
           ])
         );

@@ -4,6 +4,8 @@
        - 独立引导会话（helpSessions / helpMessages），不写入聊天会话表
        - 系统提示词 = App 功能清单 + FAQ + 错误对照表 + 本次页面/报错上下文（经净化）
        - 流式回复；失败/断网 → 静态 FAQ 兜底 + 重试；头部「清空」；空态快捷问题
+       - 图片附件：输入区「＋」选图 → chip → 发送时写入 message.attachments；
+         本地确定性能力「加到角色图片库」（App.Media.addImage，不依赖模型返回）
    · 页面 'help'：全屏静态 FAQ（分类折叠 + 搜索），离线可用
    ========================================================================= */
 (function () {
@@ -27,7 +29,10 @@
     error_hint: 'error_hint',
     about: 'settings_help',
     help_page: 'settings_help',
-    help: 'settings_help'
+    help: 'settings_help',
+    /* 设置页「图片库」说明、角色编辑页图片库入口（复用设置帮助会话） */
+    media_help: 'settings_help',
+    character_images: 'settings_help'
   };
   var SOURCE_LABEL = {
     guide_wizard: '创建向导',
@@ -37,7 +42,9 @@
     bubble_next_step: '悬浮气泡·怎么走',
     error_hint: '错误提示',
     about: '关于页',
-    help_page: '使用帮助页'
+    help_page: '使用帮助页',
+    media_help: '图片库帮助',
+    character_images: '角色图片库'
   };
 
   var drawer = null;      // 当前打开的抽屉状态
@@ -138,9 +145,21 @@
       .catch(function () { return []; });
   }
 
-  function saveMessage(sessionId, role, content) {
+  /* 消息落库；attachments 只保留契约字段（0..1 条图片），不含任何 Key/聊天正文 */
+  function saveMessage(sessionId, role, content, attachments) {
     if (!sessionId) return Promise.resolve(null);
     var row = { id: U().uid('hm'), sessionId: sessionId, role: role, content: String(content || ''), createdAt: Date.now() };
+    if (attachments && attachments.length) {
+      row.attachments = attachments.slice(0, 1).map(function (a) {
+        return {
+          kind: a.kind || 'image',
+          name: String(a.name || ''),
+          mime: String(a.mime || ''),
+          size: Number(a.size) || 0,
+          dataUri: String(a.dataUri || '')
+        };
+      });
+    }
     return App.DB.put('helpMessages', row).catch(function (e) {
       console.warn('[help] 消息保存失败', e);
       return null;
@@ -211,19 +230,28 @@
       class: 'composer-send', type: 'button', html: ui.icon('send'),
       attrs: { 'aria-label': '发送问题' }
     });
+    /* 「＋」图片附件按钮（选图 → chip → 发送时写入 message.attachments） */
+    var attachBtn = ui.el('button', {
+      class: 'help-attach', type: 'button', html: ui.icon('plus', 22),
+      attrs: { 'aria-label': '添加图片附件', 'data-guide-tap': 'attach' }
+    });
+    var attachBar = ui.el('div', { class: 'help-attach-bar', attrs: { 'aria-hidden': 'true' } });
     inputWrap.appendChild(input);
+    composer.appendChild(attachBtn);
     composer.appendChild(inputWrap);
     composer.appendChild(sendBtn);
 
     box.appendChild(head);
     box.appendChild(body);
+    box.appendChild(attachBar);
     box.appendChild(composer);
     wrap.appendChild(mask);
     wrap.appendChild(box);
 
     var state = {
       wrap: wrap, mask: mask, box: box, head: head, list: list,
-      input: input, sendBtn: sendBtn, ctx: ctx,
+      input: input, sendBtn: sendBtn, attachBtn: attachBtn, attachBar: attachBar, ctx: ctx,
+      attachment: null, picking: false, recentImageAtt: null,
       sessionId: '', dbMsgs: [], streaming: null, sending: false,
       lastQuestion: '', closed: false, cleanups: []
     };
@@ -232,6 +260,7 @@
     mask.addEventListener('click', function () { close(); });
     closeBtn.addEventListener('click', function () { close(); });
     clearBtn.addEventListener('click', function () { clearHistory(); });
+    attachBtn.addEventListener('click', function () { pickAttachment(state); });
 
     bindDrag(state);
     bindComposer(state);
@@ -356,11 +385,14 @@
     } catch (e) { el.scrollTop = el.scrollHeight; }
   }
 
-  function appendMsg(state, role, text) {
+  function appendMsg(state, role, text, attachments) {
     var ui = UI();
     var msg = ui.el('div', { class: 'msg ' + (role === 'user' ? 'me' : 'ai') });
     var msgBody = ui.el('div', { class: 'msg-body' });
-    var bubble = ui.el('div', { class: 'msg-bubble', text: String(text || '') });
+    var bubble = ui.el('div', { class: 'msg-bubble' });
+    var content = String(text || '');
+    if (content) bubble.textContent = content;
+    renderMsgImages(state, bubble, attachments);
     var meta = ui.el('div', { class: 'msg-meta', text: role === 'user' ? '我' : '引导助手' });
     msgBody.appendChild(bubble);
     msgBody.appendChild(meta);
@@ -368,6 +400,24 @@
     state.list.appendChild(msg);
     scrollBottom(state);
     return { msg: msg, body: msgBody, bubble: bubble, meta: meta };
+  }
+
+  /* 消息气泡内的图片缩略图（点击全屏预览；数据只在本机） */
+  function renderMsgImages(state, bubble, attachments) {
+    if (!bubble || !attachments || !attachments.length) return;
+    var ui = UI();
+    var box = ui.el('div', { class: 'help-msg-imgs' });
+    attachments.forEach(function (att) {
+      if (!att || att.kind !== 'image' || !att.dataUri) return;
+      var thumb = ui.el('button', {
+        class: 'help-msg-img', type: 'button',
+        attrs: { 'aria-label': '查看图片 ' + (att.name || '') },
+        on: { click: function () { previewAttachment(att); } }
+      });
+      thumb.appendChild(ui.el('img', { attrs: { src: att.dataUri, alt: att.name || '图片' } }));
+      box.appendChild(thumb);
+    });
+    if (box.childNodes.length) bubble.appendChild(box);
   }
 
   function appendTyping(state) {
@@ -392,9 +442,15 @@
     box.appendChild(ui.el('div', { class: 'help-empty-icon', html: ui.icon('guide', 44) }));
     box.appendChild(ui.el('div', { class: 'help-empty-title', text: '有问题，问我' }));
     var desc = '我只看当前页面和错误码，不读取你的聊天内容与 API Key。';
+    var qs = QUICK_QUESTIONS;
+    if (ctx && (ctx.source === 'media_help' || ctx.source === 'character_images')) {
+      /* 图片库入口：换成更贴题的欢迎语与快捷问题 */
+      desc = '图片只保存在本机。可以问我：怎么让角色发图片、怎么把图片加进角色图片库、支持哪些格式。';
+      qs = ['怎么让角色给我发图片', '怎么把图片加进角色图片库', '上帝模式是什么'];
+    }
     box.appendChild(ui.el('div', { class: 'help-empty-desc', text: desc }));
     var chips = ui.el('div', { class: 'help-chips' });
-    QUICK_QUESTIONS.forEach(function (q) {
+    qs.forEach(function (q) {
       var chip = ui.el('button', {
         class: 'help-chip', type: 'button', text: q,
         attrs: { 'aria-label': '快捷提问：' + q },
@@ -415,6 +471,171 @@
       state.emptyEl.parentNode.removeChild(state.emptyEl);
     }
     if (state) state.emptyEl = null;
+  }
+
+  /* ======================================================================
+     四之二、图片附件（选图 / chip / 预览 / 一键加入角色图片库）
+     ====================================================================== */
+  /* 运行时守卫：js/media.js 由 Lead 提供，尚未加载时给可读提示而不是崩溃 */
+  function mediaApi() {
+    var m = App.Media;
+    return (m && typeof m.pickImage === 'function') ? m : null;
+  }
+
+  function previewAttachment(att) {
+    if (!att) return;
+    var m = App.Media;
+    if (m && typeof m.preview === 'function') {
+      try { m.preview(att.dataUri || att); return; } catch (e) { console.warn('[help] 图片预览失败', e); }
+    }
+    UI().toast('预览暂不可用，可以直接发送');
+  }
+
+  /* 选图：成功后输入框上方出现 chip，可移除；取消/超限不报错崩溃 */
+  function pickAttachment(state) {
+    if (!state || state.closed || state.picking) return Promise.resolve(null);
+    var m = mediaApi();
+    if (!m) { UI().toast('图片功能还没加载好，请稍后再试', 'error'); return Promise.resolve(null); }
+    state.picking = true;
+    return m.pickImage().then(function (att) {
+      if (!att || !att.dataUri || state.closed) return null;
+      state.attachment = att;
+      renderAttachBar(state);
+      return att;
+    }).catch(function (e) {
+      /* 用户取消不算错误；超限/解码失败给出提示 */
+      if (!e || e.code !== 'cancel') {
+        console.warn('[help] 选图失败', e);
+        if (e && e.message) UI().toast(String(e.message).slice(0, 60), 'error');
+      }
+      return null;
+    }).then(function (r) {
+      state.picking = false;
+      return r;
+    });
+  }
+
+  /* 输入框上方的附件 chip：缩略图（点击预览）+ 名称 + 移除 */
+  function renderAttachBar(state) {
+    if (!state || !state.attachBar) return;
+    var ui = UI();
+    ui.clear(state.attachBar);
+    var att = state.attachment;
+    if (!att) {
+      state.attachBar.classList.remove('show');
+      state.attachBar.setAttribute('aria-hidden', 'true');
+      return;
+    }
+    state.attachBar.classList.add('show');
+    state.attachBar.setAttribute('aria-hidden', 'false');
+    var chip = ui.el('div', { class: 'help-attach-chip' });
+    var thumb = ui.el('button', {
+      class: 'help-attach-chip-thumb', type: 'button',
+      attrs: { 'aria-label': '预览图片' },
+      on: { click: function () { previewAttachment(att); } }
+    });
+    thumb.appendChild(ui.el('img', { attrs: { src: att.dataUri, alt: att.name || '图片' } }));
+    chip.appendChild(thumb);
+    chip.appendChild(ui.el('span', { class: 'help-attach-chip-name', text: att.name || '图片' }));
+    chip.appendChild(ui.el('button', {
+      class: 'help-attach-chip-x', type: 'button', html: ui.icon('close', 16),
+      attrs: { 'aria-label': '移除图片' },
+      on: {
+        click: function () {
+          state.attachment = null;
+          renderAttachBar(state);
+        }
+      }
+    }));
+    state.attachBar.appendChild(chip);
+  }
+
+  /* 发送带图消息后立即出现的「加到角色图片库」卡片（不依赖模型返回，离线可用） */
+  function appendImgActionMsg(state, att, text) {
+    if (!state || !att) return null;
+    var ui = UI();
+    var msg = ui.el('div', { class: 'msg ai help-img-msg' });
+    var body = ui.el('div', { class: 'msg-body' });
+    var bubble = ui.el('div', { class: 'msg-bubble help-img-bubble' });
+    bubble.appendChild(ui.el('div', { class: 'help-img-bubble-text', text: '图片收到。要把它加到某个角色的图片库吗？以后聊天时 TA 就能发给你。' }));
+    var action = ui.el('button', {
+      class: 'help-img-action', type: 'button',
+      html: ui.icon('character', 16) + '<span>加到角色图片库</span>',
+      attrs: { 'aria-label': '把这张图片加到某个角色的图片库' }
+    });
+    action.addEventListener('click', function () { addImageToCharacter(state, att, text, action); });
+    bubble.appendChild(action);
+    body.appendChild(bubble);
+    body.appendChild(ui.el('div', { class: 'msg-meta', text: '引导助手' }));
+    msg.appendChild(body);
+    state.list.appendChild(msg);
+    scrollBottom(state);
+    return msg;
+  }
+
+  /* 选角色 → App.Media.addImage（本地写库，模型报错/离线也能用） */
+  function addImageToCharacter(state, att, text, btn) {
+    var ui = UI();
+    var m = App.Media;
+    if (!att) return Promise.resolve(null);
+    if (!m || typeof m.addImage !== 'function') {
+      ui.toast('图片库还没加载好，请稍后再试', 'error');
+      return Promise.resolve(null);
+    }
+    if (btn) btn.disabled = true;
+    var added = false;
+    return App.DB.all('characters').then(function (rows) {
+      var list = (rows || []).slice(0, 30);
+      if (!list.length) {
+        ui.toast('还没有角色，先去「角色」页新建一个吧', 'error');
+        return null;
+      }
+      var items = list.map(function (ch) {
+        return {
+          id: ch.id,
+          icon: 'character',
+          label: ch.name || '未命名角色',
+          desc: (ch.type === 'assistant' ? '领域助手' : '陪聊角色') + (ch.avatar ? (' · ' + ch.avatar) : '')
+        };
+      });
+      return ui.sheet({ title: '加到哪个角色的图片库？', items: items }).then(function (picked) {
+        if (!picked || !picked.id) return null;
+        var target = null;
+        for (var i = 0; i < list.length; i++) { if (list[i].id === picked.id) { target = list[i]; break; } }
+        if (!target) return null;
+        var caption = String(text || '').trim().slice(0, 40);
+        return m.addImage(target.id, att, { source: 'guide', caption: caption }).then(function () {
+          added = true;
+          ui.toast('已加入 ' + (target.name || '角色') + ' 的图片库，聊天时可以发给你', 'ok');
+          if (btn) {
+            var span = btn.querySelector('span');
+            if (span) span.textContent = '已加入图片库';
+          }
+          return null;
+        });
+      });
+    }).catch(function (e) {
+      console.warn('[help] 加入图片库失败', e);
+      ui.toast('加入失败：' + ((e && e.message) || '请稍后再试'), 'error');
+      return null;
+    }).then(function (r) {
+      if (btn && !added) btn.disabled = false;
+      return r;
+    });
+  }
+
+  /* 模型回答提到「图片库/加图」且最近发过图片时，补一条静态提示 */
+  function maybeImgTip(state, typing) {
+    if (!state || state.closed || !typing || !typing.body) return;
+    if (!state.recentImageAtt) return;
+    var txt = String((typing.bubble && typing.bubble.textContent) || typing.text || '');
+    if (!/图片库|加图|能发的图片|发图/.test(txt)) return;
+    if (typing.body.querySelector('.help-img-tip')) return;
+    typing.body.appendChild(UI().el('div', {
+      class: 'help-img-tip',
+      text: '点上面「加到角色图片库」按钮，就能把这张图加入某个角色的图片库。'
+    }));
+    scrollBottom(state);
   }
 
   /* 静态 FAQ 兜底 */
@@ -553,18 +774,26 @@
   function send(state, text) {
     if (!state || state.closed) return Promise.resolve();
     text = String(text || '').trim();
-    if (!text) return Promise.resolve();
+    var att = state.attachment || null;
+    if (!text && !att) return Promise.resolve();
     if (state.sending) { UI().toast('我还在回答，稍等一下'); return Promise.resolve(); }
     hideEmpty(state);
     state.input.value = '';
     state.input.style.height = 'auto';
     state.lastQuestion = text;
+    state.attachment = null;
+    renderAttachBar(state);
 
-    appendMsg(state, 'user', text);
-    state.dbMsgs.push({ role: 'user', content: text });
-    saveMessage(state.sessionId, 'user', text).then(function () { return touchSession(state.sessionId); }).catch(function () {});
+    appendMsg(state, 'user', text, att ? [att] : null);
+    state.dbMsgs.push({ role: 'user', content: text, attachments: att ? [att] : undefined });
+    if (att) {
+      /* 本地确定性能力：发送后立刻给出「加到角色图片库」入口（模型失败也不受影响） */
+      state.recentImageAtt = att;
+      appendImgActionMsg(state, att, text);
+    }
+    saveMessage(state.sessionId, 'user', text, att ? [att] : null).then(function () { return touchSession(state.sessionId); }).catch(function () {});
 
-    return requestAnswer(state, text);
+    return requestAnswer(state, text || '我把这张图片发给你了，想把它加到某个角色的图片库里，可以吗？');
   }
 
   function requestAnswer(state, question) {
@@ -614,6 +843,7 @@
             state.dbMsgs.push({ role: 'ai', content: fullText });
             saveMessage(state.sessionId, 'ai', fullText).then(function () { return touchSession(state.sessionId); }).catch(function () {});
           }
+          if (t) maybeImgTip(state, t);
           scrollBottom(state);
         },
         onError: function (err) {
@@ -670,6 +900,10 @@
     }).then(function (yes) {
       if (!yes) return;
       stopStreaming(state);
+      /* 清空时一并丢弃未发送的图片附件 */
+      state.attachment = null;
+      state.recentImageAtt = null;
+      renderAttachBar(state);
       return App.DB.query('helpMessages', { where: { sessionId: state.sessionId } }).then(function (rows) {
         var ids = (rows || []).map(function (r) { return r.id; });
         return App.DB.delMany('helpMessages', ids);
@@ -712,7 +946,7 @@
     return true;
   }
 
-  Help.close = function () { return close(); };
+  Help.close = function (immediate) { return close(immediate); };
 
   Help.isOpen = function () { return !!drawer; };
 
@@ -751,8 +985,15 @@
       return loadMessages(session.id);
     }).then(function (rows) {
       (rows || []).forEach(function (m) {
-        state.dbMsgs.push({ role: m.role === 'assistant' ? 'ai' : m.role, content: m.content });
-        appendMsg(state, m.role === 'ai' || m.role === 'assistant' ? 'ai' : 'user', m.content);
+        var role = (m.role === 'ai' || m.role === 'assistant') ? 'ai' : 'user';
+        var atts = Array.isArray(m.attachments) ? m.attachments : null;
+        state.dbMsgs.push({ role: role, content: m.content, attachments: atts });
+        appendMsg(state, role, m.content, atts);
+        /* 历史里的带图消息同样保留「加到角色图片库」入口 */
+        if (role === 'user' && atts && atts.length) {
+          state.recentImageAtt = atts[0];
+          appendImgActionMsg(state, atts[0], m.content);
+        }
       });
       if (!state.dbMsgs.length) renderEmpty(state, ctx);
       scrollBottom(state);
