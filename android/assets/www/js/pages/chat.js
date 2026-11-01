@@ -522,16 +522,26 @@
       }
 
       /* ---------------- 流式生成核心 ---------------- */
+      // 性能：流式期间最多每 90ms 做一次完整富文本渲染（Markdown 解析 + 图片节点重建），
+      // 其余帧只更新纯文本，避免长回复时每帧 innerHTML 重建造成掉帧、输入卡顿。
+      var RICH_RENDER_MS = 90;
       function applyStreaming(s) {
         var node = msgEl(s.target.id);
         if (!node) return;
         var bubble = node.querySelector('.msg-bubble');
         if (!bubble) return;
+        var content = s.target.content;
         if (s.target.role === 'user') {
-          bubble.textContent = s.target.content;
-        } else if (String(s.target.content || '').trim()) {
+          bubble.textContent = content;
+        } else if (String(content || '').trim()) {
           // 空内容（或只有空白）时保留「正在输入」动画，避免气泡被 :empty 规则隐藏
-          renderRichContent(bubble, s.target.content);
+          var now = Date.now();
+          if (!s.lastRichAt || now - s.lastRichAt >= RICH_RENDER_MS) {
+            s.lastRichAt = now;
+            renderRichContent(bubble, content);
+          } else {
+            bubble.textContent = content;
+          }
           bubble.classList.remove('typing');
         }
         bubble.classList.add('streaming');
@@ -1795,7 +1805,7 @@
         }).catch(function (err) { console.error('[chat] 重新加载元数据失败', err); });
       }
 
-      App.Router.onChange(function (cur) {
+      st.unsubRoute = App.Router.onChange(function (cur) {
         if (st.destroyed || st.metaRefreshing) return;
         if (!root.isConnected) return;
         if (!cur || !cur.entry || cur.entry.el !== root) return;
@@ -1808,6 +1818,7 @@
       /* ---------------- 销毁清理 ---------------- */
       page.onDestroy(function () {
         st.destroyed = true;
+        if (typeof st.unsubRoute === 'function') st.unsubRoute();
         var s = st.streaming;
         st.streaming = null;
         if (s) {

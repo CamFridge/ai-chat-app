@@ -36,8 +36,8 @@ $env:PATH = (Join-Path $JavaHome 'bin') + ';' + $env:PATH
 $env:JAVA_HOME = $JavaHome
 
 $Build = Join-Path $Root 'build'
-$VersionCode = '2'
-$VersionName = '1.1.0'
+$VersionCode = '3'
+$VersionName = '1.1.1'
 $Gen = Join-Path $Build 'gen'
 $Classes = Join-Path $Build 'classes'
 $DexDir = Join-Path $Build 'dex'

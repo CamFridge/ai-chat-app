@@ -4,6 +4,8 @@ import android.content.ClipData;
 import android.content.ClipboardManager;
 import android.content.Context;
 import android.os.Build;
+import android.os.Handler;
+import android.os.Looper;
 import android.os.Vibrator;
 import android.util.Log;
 import android.webkit.JavascriptInterface;
@@ -13,7 +15,9 @@ import android.widget.Toast;
 import org.json.JSONObject;
 
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
@@ -30,6 +34,11 @@ public class Bridge {
     private final WebView webView;
     private final ExecutorService io = Executors.newCachedThreadPool();
     private final Map<String, Net.CancelToken> streams = new HashMap<>();
+    // 流式增量合并：模型 API 每秒可能推几十上百个小片段，逐个 evaluateJavascript
+    // 会挤占 WebView UI 线程，导致点击/滚动发卡。这里聚合约 55ms 再推给 JS。
+    private final Handler mainHandler = new Handler(Looper.getMainLooper());
+    private final Map<String, StringBuilder> deltaBufs = new HashMap<>();
+    private final Set<String> deltaScheduled = new HashSet<>();
 
     Bridge(MainActivity activity, WebView webView) {
         this.activity = activity;
@@ -179,11 +188,12 @@ public class Bridge {
                 Net.stream(args, new Net.StreamSink() {
                     @Override
                     public void onDelta(String text) {
-                        event(id, "delta", "text", text);
+                        queueDelta(id, text);
                     }
 
                     @Override
                     public void onUsage(JSONObject usage) {
+                        flushDelta(id);
                         JSONObject ev = baseEvent("usage");
                         try { ev.put("usage", usage); } catch (Exception ignore) { }
                         postEvent(id, ev);
@@ -191,6 +201,7 @@ public class Bridge {
 
                     @Override
                     public void onDone(JSONObject usage) {
+                        flushDelta(id);
                         cleanup(id);
                         JSONObject ev = baseEvent("done");
                         try { ev.put("usage", usage == null ? new JSONObject() : usage); } catch (Exception ignore) { }
@@ -199,6 +210,7 @@ public class Bridge {
 
                     @Override
                     public void onError(JSONObject error) {
+                        flushDelta(id);
                         cleanup(id);
                         JSONObject ev = baseEvent("error");
                         try { ev.put("error", error == null ? new JSONObject() : error); } catch (Exception ignore) { }
@@ -209,9 +221,49 @@ public class Bridge {
         });
     }
 
+    /* ---------------- 流式增量合并 ---------------- */
+    private void queueDelta(final String id, String text) {
+        if (text == null || text.length() == 0) return;
+        boolean schedule = false;
+        synchronized (deltaBufs) {
+            StringBuilder b = deltaBufs.get(id);
+            if (b == null) {
+                b = new StringBuilder();
+                deltaBufs.put(id, b);
+            }
+            b.append(text);
+            if (!deltaScheduled.contains(id)) {
+                deltaScheduled.add(id);
+                schedule = true;
+            }
+        }
+        if (schedule) {
+            mainHandler.postDelayed(new Runnable() {
+                @Override
+                public void run() {
+                    flushDelta(id);
+                }
+            }, 55);
+        }
+    }
+
+    private void flushDelta(String id) {
+        StringBuilder b;
+        synchronized (deltaBufs) {
+            b = deltaBufs.remove(id);
+            deltaScheduled.remove(id);
+        }
+        if (b == null || b.length() == 0) return;
+        event(id, "delta", "text", b.toString());
+    }
+
     private void cleanup(String id) {
         synchronized (streams) {
             streams.remove(id);
+        }
+        synchronized (deltaBufs) {
+            deltaBufs.remove(id);
+            deltaScheduled.remove(id);
         }
     }
 

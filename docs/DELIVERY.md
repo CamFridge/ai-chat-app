@@ -6,7 +6,7 @@
 
 | 文件 | 说明 |
 | --- | --- |
-| `ai-chat-app/build/AI-Chat-1.0.0.apk` | 签名后的安装包（可直接安装） |
+| `ai-chat-app/build/AI-Chat-1.1.0.apk` | 签名后的安装包（可直接安装） |
 | `ai-chat-app/keystore/aichat-release.jks` | 签名密钥库（alias `aichat`，口令 `aichat2026`） |
 | `ai-chat-app/scripts/build.ps1` | 一键构建脚本（aapt2 → javac → d8 → zipalign → apksigner） |
 | `ai-chat-app/android/` | 原生壳源码 + 前端资源（`assets/www`） |
@@ -16,16 +16,27 @@
 
 **APK 指纹（最终正式构建）**
 
-- 大小：261,137 bytes（0.25 MB）
-- SHA-256：`473DADB01FE2350F9F7F52AC8D82C8576FFBC78756013401875AAC3EE4DE9435`
-- 包名：`com.aichat.client`；版本：`1.0.0`（versionCode 1）
+- 大小：277,589 bytes（0.26 MB）
+- SHA-256：`DC7F19738F901E2C5CDABC7CD22356478A489C082AB028B14F7A585FEA9D5577`
+- 包名：`com.aichat.client`；版本：`1.1.0`（versionCode 2）
 - minSdk 26（Android 8.0）/ targetSdk 34 / compileSdk 34
 - 签名：APK Signature Scheme v2 + v3（minSdk 26 下 v1/JAR 签名非必需），`zipalign` 4 字节对齐校验通过
 - 证书：`CN=AI Chat, OU=Mobile, O=AiChat, L=Shenzhen, ST=Guangdong, C=CN`
 - 证书 SHA-256：`F4AAA0A8AC71DCA67AD95F290F106A44C12D694F8477305FB213828AB92D2590`
 - 发布版未开启 `android:debuggable`，WebView 调试端口只在调试构建中打开
 
-> 本次为修订版最终构建：工程此前被外部清理，已用 DSH 会话日志逐文件重放恢复并通过全部 E2E 回归；签名密钥库在重建时重新生成，因此证书指纹更新为上面这一条，安装时如遇「签名不一致」请先卸载旧版。构建完成后仍在 Android 13 模拟器上完成了设备端复验（见 §5.1）。
+> 本版（1.1.0）沿用上一次重建后的签名密钥库（证书 SHA-256 不变），versionCode 升到 2；如果手机上装过 1.0.0，可直接覆盖升级（无需卸载）。工程此前被外部清理，已用 DSH 会话日志逐文件重放恢复并通过全部 E2E 回归；构建完成后在 Android 13 模拟器上完成设备端复验（见 §5.1）。
+
+### 1.2 本版新增功能（v1.1.0）
+
+- **角色图片库**：每个角色有独立图片库（新表 `characterImages`，单角色最多 60 张）。入口在「编辑角色 → 角色图片库」：可添加相册图片、查看大图、重命名 / 修改说明 / 删除；删除角色时图片库级联清理。图片存为 data URI（WebView 压缩后 ≤320px JPEG），不经过网络。
+- **角色主动发图**：聊天时把角色图片库清单注入 system prompt（`- ID=…｜名称=…｜说明=…`），模型在回复里用 `[[img:图片ID]]` 指定要发的图，前端渲染为图片消息；图片已删除时显示「图片已不可用」，不会漏出原始标记。
+- **给角色发图片 / 文件**：聊天输入框左侧「＋」→ 相册图片 / 文件。图片消息按 OpenAI 多模态格式（`content:[{type:'text'},{type:'image_url'}]`）发给模型；文本类文件读取内容（≤2MB / 8000 字）作为文本附带发送，界面显示文件卡片、点击可查看文本。用户消息渲染缩略图 / 文件卡，空文本可只发附件。
+- **引导助手帮忙加图**：帮助抽屉可发图片（附件 chip），发送后本地立即出现「加到角色图片库」按钮 → 选角色 → 写入该角色图片库（`source='guide'`），离线可用，不依赖模型输出；FAQ 新增「怎么让角色给我发图片？」「上帝模式是什么？」。
+- **动作 / 神态斜体**：system prompt 约定动作与神态用 `*…*` 包裹、说的话用正文；前端 Markdown 渲染把单星号转成 `<em class="md-action">`（斜体、更细字重、次要色），台词保持正文字体。只对 assistant 消息生效，用户消息不做转换。
+- **上帝模式**：设置 →「角色与聊天 → 上帝模式」开关（持久化 `settings.god_mode`）。开启后 system prompt 追加一段说明，让角色知道自己只是应用里的虚拟角色、可以自然地聊这件事；关闭即恢复沉浸。
+- **数据库升级**：IndexedDB 版本 1→2，新增 `characterImages` 表与 `characterId` 索引；旧数据自动保留。
+- **修复弹窗 / 操作菜单不可见**：`UI.modal` / `UI.sheet` 的入场动画类之前加在包裹层，CSS 却匹配在弹窗本体，导致遮罩透明、弹窗 opacity 停留 0（内容存在但看不见）。已在 `base.css` 增加 `.modal-wrap.show .modal` / `.sheet-wrap.show .sheet` 等匹配规则，所有确认框、菜单、图片库弹窗恢复可见。
 
 ### 1.1 本版修复与改进
 
@@ -41,7 +52,7 @@
 
 ```powershell
 # USB 调试已开启时
-adb install -r ai-chat-app\build\AI-Chat-1.0.0.apk
+adb install -r ai-chat-app\build\AI-Chat-1.1.0.apk
 
 # 或把 APK 传到手机，在文件管理器里点击安装（允许「安装未知来源应用」）
 ```
@@ -54,7 +65,7 @@ adb install -r ai-chat-app\build\AI-Chat-1.0.0.apk
 - **前端**：纯 HTML/CSS/vanilla JS，零第三方依赖，微信式 4 Tab + 二级页栈。
 - **网络**：全部经 Java 桥（`HttpURLConnection` + SSE 逐行解析），不走 WebView fetch，规避 CORS；流式输出通过 `window.__nativeEvent` 回传。
 - **Key 安全**：AndroidKeyStore（AES-256-GCM）加密后存 SharedPreferences；Key 不写 IndexedDB、不进入导出备份、不出现在气泡上下文中。
-- **数据**：IndexedDB（10 张表：providers/worldviews/characters/personas/presets/sessions/messages/helpSessions/helpMessages/settings）。
+- **数据**：IndexedDB（11 张表：providers/worldviews/characters/characterImages/personas/presets/sessions/messages/helpSessions/helpMessages/settings）。角色图片以 data URI 存储（单张压缩后 ≤320px，单角色 ≤60 张），聊天附件随消息保存在 `messages.attachments`，不写入导出备份以外的任何外部位置。
 - **构建**：不依赖 Gradle，`scripts/build.ps1` 手工串 aapt2/javac/d8/zipalign/apksigner，结果确定、可离线复现。
 
 ## 4. 功能清单（对应需求 §十一 验收标准）
@@ -101,22 +112,24 @@ adb install -r ai-chat-app\build\AI-Chat-1.0.0.apk
 | `scripts/e2e-chat.js` | 历史渲染、流式、停止、落库、重新生成多版本 | 16/16 |
 | `scripts/e2e-guide.js` | 气泡上下文、扇形菜单、怎么走步骤、focus/navigate、纯文本兜底 | 14/14 |
 | `scripts/e2e-acceptance.js` | AI 补全成功路径、草稿恢复、改稿回滚、助手 prompt、1000 条性能、断网、错误帮助、引导会话隔离 | 32/32 |
+| `scripts/e2e-media.js`（v1.1.0 新增） | 角色图片库增删/预览/菜单、聊天发图片与文件附件并落库、assistant 发图 `[[img:ID]]`、动作斜体 `*…*`、上帝模式开关与 system prompt、帮助抽屉发图→加入图片库 | 46/46 |
 
 截图位于 `ai-chat-app/build/shots/`（浅色/暗色/AMOLED、聊天/角色/引导气泡/错误帮助等）。
 
 ### 5.1 Android 设备端验证（API 33 / Android 13 模拟器）
 
-> **复验状态**：本版构建已在 Windows 本机的 Android 13（API 33，x86_64）模拟器上完成安装、启动与设备端自动化验证（AEHD 2.2 加速驱动经用户授权后安装，emulator 37.2.13 + `system-images;android-33;google_apis;x86_64`）。设备端验证覆盖原生桥、Key 加密、流式回复、气泡、主题与返回键，并额外专项验证「null 修复」。
+> **复验状态**：本版（1.1.0）构建已在 Windows 本机的 Android 13（API 33，x86_64）模拟器上完成安装、启动与设备端自动化验证（AEHD 2.2 加速驱动经用户授权后安装，emulator 37.2.13 + `system-images;android-33;google_apis;x86_64`）。设备端验证覆盖原生桥、Key 加密、流式回复、气泡、主题与返回键，并额外专项验证「null 修复」与 v1.1.0 新增功能。
 
 | 项 | 结果 |
 | --- | --- |
-| `scripts/device-e2e.js`（原生桥 app.info / secure.set+get / ui.toast / ui.statusBar；免引导进主界面；4 Tab 文案；聊天页历史；发消息收流式回复并落库；气泡扇面 4 项、上下文不含 Key/聊天正文；深色主题；角色/API/设置页；无未捕获异常） | **17/17** |
+| `scripts/device-e2e.js`（原生桥 app.info 返回 version=1.1.0 / secure.set+get / ui.toast / ui.statusBar；免引导进主界面；4 Tab 文案；聊天页历史；发消息收流式回复并落库；气泡扇面、上下文不含 Key/聊天正文；深色主题；角色/API/设置页；无未捕获异常） | **17/17** |
 | `scripts/device-null.js`（设备端 null 回归：mock SSE 的 `delta.content` 混入 JSON null / reasoning_content null，校验桥接层增量、UI 气泡与落库消息均不含 "null"） | **3/3** |
+| `scripts/device-media-smoke.js`（v1.1.0 新增：角色图片库写入、动作斜体渲染、角色发图 `[[img:ID]]` 渲染为图片且不泄漏标记、上帝模式 system prompt 注入与否） | **7/7** |
 | 系统返回键 | 二级页返回 = 弹栈（depth 2→1，不退出）；Tab 根返回 = 退出 App |
 | 发布包安装启动 | 通过，`adb logcat` 无 FATAL/崩溃，界面与截图正常 |
 | Key 加密存储 | `run-as` 被拒（发布包不可调试），Key 仅存 SharedPreferences 密文 |
 
-设备截图位于 `ai-chat-app/build/device/`：`10-main-chat-list.png`、`11-chat.png`、`12-chat-reply.png`（mock SSE 流式回复「你好，这是设备端测试回复。」，含 8 tokens 用量）、`13-bubble-fan.png`、`14-chat-dark.png`、`15-settings-area.png`、`20-null-regression.png`、`result.json`。设备测试用 mock SSE 服务通过 `adb reverse tcp:8899 tcp:8899` 暴露到设备 `127.0.0.1:8899`（脚本：`scripts/mock-sse-server.js`、`scripts/device-e2e.js`、`scripts/device-null.js`）。
+设备截图位于 `ai-chat-app/build/device/`：`10-main-chat-list.png`、`11-chat.png`、`12-chat-reply.png`（mock SSE 流式回复「你好，这是设备端测试回复。」，含 8 tokens 用量）、`13-bubble-fan.png`、`14-chat-dark.png`、`15-settings-area.png`、`20-null-regression.png`、`21-media-god.png`（v1.1.0：角色斜体动作 + 角色发图 + 图片名）、`result.json`。设备测试用 mock SSE 服务通过 `adb reverse tcp:8899 tcp:8899` 暴露到设备 `127.0.0.1:8899`（脚本：`scripts/mock-sse-server.js`、`scripts/device-e2e.js`、`scripts/device-null.js`、`scripts/device-media-smoke.js`）。
 
 > 说明：个别模拟器 ROM（本次 JellyDroid API33 镜像）的 AssetManager 对 `assets/` 子目录返回反斜杠路径，`serveAsset` 已内置 `/`→`\` 双分隔符兜底并在该镜像上验证；标准 Android 设备走正常正斜杠路径，不受影响。
 
@@ -131,7 +144,9 @@ adb install -r ai-chat-app\build\AI-Chat-1.0.0.apk
 ## 6. 已知限制
 
 - 浏览器/E2E 使用 mock 网络层验证交互与数据流；**真实第三方 API 服务（OpenAI/DeepSeek 等）未用真实 Key 做线上联调**，需要用户填入自己的 Key 后使用「测试连接」验证。原生桥（Key 加密存储、流式回复、系统返回键、状态栏、Toast）已在本版构建的 Android 13 模拟器上验证（见 5.1），其中网络请求同样走真实 Java 桥与真实 SSE 解析（对本地 mock SSE 服务）。
-- 图片选择（角色头像）与文件导入没有做自动化 UI 点击验证，代码路径已实现（`ACTION_GET_CONTENT` / `ACTION_OPEN_DOCUMENT`）。
+- 图片选择（头像 / 角色图片库 / 聊天附件）走 Android 系统选择器（`ui.pickImage` / `file.import`），浏览器 E2E 用测试钩子（`window.__AICHAT_MOCK_IMAGE__` / `__AICHAT_MOCK_FILE__`）覆盖了「选到图之后」的全部逻辑，**原生系统选择器的真实点击未做自动化**；真机上首次使用需授权访问相册/文件。
+- 图片以 base64 存储，单角色 60 张、聊天附件随消息保存，会占用应用私有存储；导入备份不包含图片库与聊天附件（仅含数据表字段，图片随表导出，体积会变大，谨慎使用）。
+- 参考图/多模态发送依赖所选 API 支持图片输入（`image_url`）；不支持时模型可能只看到文本占位提示。
 - 签名只输出 v2/v3 方案（minSdk 26 下现代设备可正常安装）；如需兼容 Android 7 以下需降低 minSdk 并让 apksigner 生成 v1 签名。
 - 聊天页未实现「右滑打开角色抽屉」手势（避免与系统返回手势冲突），入口在角色名/顶部菜单。
 - 「生成中」为内存态标记，进程被杀后由列表加载时纠正。
