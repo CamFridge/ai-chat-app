@@ -36,6 +36,8 @@ $env:PATH = (Join-Path $JavaHome 'bin') + ';' + $env:PATH
 $env:JAVA_HOME = $JavaHome
 
 $Build = Join-Path $Root 'build'
+$VersionCode = '2'
+$VersionName = '1.1.0'
 $Gen = Join-Path $Build 'gen'
 $Classes = Join-Path $Build 'classes'
 $DexDir = Join-Path $Build 'dex'
@@ -43,7 +45,7 @@ $ResZip = Join-Path $Build 'res.zip'
 $BaseApk = Join-Path $Build 'base.apk'
 $Unsigned = Join-Path $Build 'unsigned.apk'
 $Aligned = Join-Path $Build 'aligned.apk'
-$OutApk = Join-Path $Build $(if ($DebugMode) { 'AI-Chat-1.0.0-debug.apk' } else { 'AI-Chat-1.0.0.apk' })
+$OutApk = Join-Path $Build ("AI-Chat-$VersionName" + $(if ($DebugMode) { '-debug.apk' } else { '.apk' }))
 $Keystore = Join-Path $Root 'keystore/aichat-release.jks'
 $KsAlias = 'aichat'
 $KsPass = 'aichat2026'
@@ -78,7 +80,7 @@ $manifest = Join-Path $AndroidDir 'AndroidManifest.xml'
 $assets = Join-Path $AndroidDir 'assets'
 $linkArgs = @('link', '-o', $BaseApk, '-I', $AndroidJar, '--manifest', $manifest,
     '-R', $ResZip, '--java', $Gen, '--min-sdk-version', '26', '--target-sdk-version', '34',
-    '--version-code', '1', '--version-name', '1.0.0', '-A', $assets, '--auto-add-overlay')
+    '--version-code', $VersionCode, '--version-name', $VersionName, '-A', $assets, '--auto-add-overlay')
 if ($DebugMode) { $linkArgs += '--debug-mode' }
 Run $Aapt2 $linkArgs
 

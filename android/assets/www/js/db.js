@@ -1,19 +1,20 @@
 /* db.js —— IndexedDB 封装，挂到 window.App.DB
-   表：providers/worldviews/characters/personas/presets/sessions/messages/helpSessions/helpMessages/settings
-   索引：messages.sessionId、helpMessages.sessionId */
+   表：providers/worldviews/characters/personas/presets/sessions/messages/helpSessions/helpMessages/characterImages/settings
+   索引：messages.sessionId、helpMessages.sessionId、sessions.characterId、providers.role、characterImages.characterId */
 (function () {
   'use strict';
   var App = window.App = window.App || {};
   var DB = App.DB = {};
 
   var DB_NAME = 'aichat';
-  var DB_VERSION = 1;
-  var STORES = ['providers', 'worldviews', 'characters', 'personas', 'presets', 'sessions', 'messages', 'helpSessions', 'helpMessages', 'settings'];
+  var DB_VERSION = 2;
+  var STORES = ['providers', 'worldviews', 'characters', 'personas', 'presets', 'sessions', 'messages', 'helpSessions', 'helpMessages', 'characterImages', 'settings'];
   var INDEXES = [
     { store: 'messages', name: 'sessionId', keyPath: 'sessionId' },
     { store: 'helpMessages', name: 'sessionId', keyPath: 'sessionId' },
     { store: 'sessions', name: 'characterId', keyPath: 'characterId' },
-    { store: 'providers', name: 'role', keyPath: 'role' }
+    { store: 'providers', name: 'role', keyPath: 'role' },
+    { store: 'characterImages', name: 'characterId', keyPath: 'characterId' }
   ];
 
   var _db = null;
@@ -57,6 +58,7 @@
             }
             if (name === 'sessions') os.createIndex('characterId', 'characterId', { unique: false });
             if (name === 'providers') os.createIndex('role', 'role', { unique: false });
+            if (name === 'characterImages') os.createIndex('characterId', 'characterId', { unique: false });
           } else if (oldV < DB_VERSION) {
             var existing = req.transaction.objectStore(name);
             INDEXES.filter(function (ix) { return ix.store === name; }).forEach(function (ix) {
@@ -258,7 +260,7 @@
   /* ---------------- 数据导入/导出辅助（不含 Key） ---------------- */
   DB.exportAll = function () {
     var tables = STORES.filter(function (t) { return t !== 'settings'; });
-    var out = { app: 'aichat', version: 1, exportedAt: Date.now(), tables: {} };
+    var out = { app: 'aichat', version: 2, exportedAt: Date.now(), tables: {} };
     return tables.reduce(function (p, t) {
       return p.then(function () { return DB.all(t).then(function (rows) { out.tables[t] = rows; }); });
     }, Promise.resolve()).then(function () {

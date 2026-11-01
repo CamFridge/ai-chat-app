@@ -9,6 +9,9 @@ const path = require('path');
 const { CdpPage } = require('./cdp.js');
 
 const PORT = Number(process.argv[2] || 9333);
+// 设备访问宿主 mock SSE（adb reverse tcp:8899 tcp:8899）；真实网络可用时可覆盖为 https URL。
+const MOCK_BASE = process.env.MOCK_BASE || 'http://127.0.0.1:8899/v1';
+const MOCK_MODEL = process.env.MOCK_MODEL || 'mock-null-model';
 const OUT = path.join(__dirname, '..', 'build', 'device');
 
 const results = [];
@@ -76,8 +79,8 @@ async function main() {
     await App.DB.clearAll();
     localStorage.clear();
     var now = Date.now();
-    await App.DB.put('providers', {id:'prov_guide', name:'引导 API', baseUrl:'https://api.example.com/v1', apiKey:'', defaultModel:'gpt-4o-mini', role:'guide', createdAt:now, updatedAt:now});
-    await App.DB.put('providers', {id:'prov_chat', name:'我的聊天 API', baseUrl:'https://api.example.com/v1', apiKey:'', defaultModel:'gpt-4o', role:'chat', createdAt:now, updatedAt:now});
+    await App.DB.put('providers', {id:'prov_guide', name:'引导 API', baseUrl:'${MOCK_BASE}', apiKey:'', defaultModel:'${MOCK_MODEL}', role:'guide', createdAt:now, updatedAt:now});
+    await App.DB.put('providers', {id:'prov_chat', name:'我的聊天 API', baseUrl:'${MOCK_BASE}', apiKey:'', defaultModel:'${MOCK_MODEL}', role:'chat', createdAt:now, updatedAt:now});
     await App.API.setKey('prov_guide', 'sk-dev-guide-123456');
     await App.API.setKey('prov_chat', 'sk-dev-chat-123456');
     await App.DB.settings.set('onboarding_completed', true);
@@ -91,7 +94,7 @@ async function main() {
       opening:'外面雨好大，先进来躲一下吧。要喝点热的吗？', firstMessage:'外面雨好大，先进来躲一下吧。要喝点热的吗？',
       systemPrompt:'你是林夏，现代都市里经营旧书店的老板娘。', avatar:'', favorite:false, createdAt:now, updatedAt:now});
     await App.DB.put('sessions', {id:'sess_dev', characterId:'char_dev', characterName:'林夏', title:'林夏', providerId:'prov_chat',
-      model:'gpt-4o', presetId:'', pinned:false, unread:0, createdAt:now, updatedAt:now});
+      model:'${MOCK_MODEL}', presetId:'', pinned:false, unread:0, createdAt:now, updatedAt:now});
     await App.DB.put('messages', {id:'m1', sessionId:'sess_dev', role:'assistant', content:'外面雨好大，先进来躲一下吧。要喝点热的吗？', status:'ok', variants:[], variantIndex:0, tokensIn:0, tokensOut:0, createdAt:now-60000});
     await App.DB.put('messages', {id:'m2', sessionId:'sess_dev', role:'user', content:'好啊，来杯热的。你这里好多旧唱片。', status:'ok', variants:[], variantIndex:0, tokensIn:0, tokensOut:0, createdAt:now-30000});
     return JSON.stringify({ok:true, chars: await App.DB.count('characters'), msgs: await App.DB.count('messages')});
@@ -103,7 +106,7 @@ async function main() {
   await page.navigate('https://app.local/index.html?dev=' + Date.now(), 3200);
   const inMain = await waitFor(page, `document.querySelectorAll('.tabbar .tab').length === 4`, 12000);
   check('免引导直接进入主界面（4 个 Tab）', inMain);
-  const tabNames = await evalJSON(page, `JSON.stringify(Array.from(document.querySelectorAll('.tabbar .tab-item')).map(function(e){return (e.textContent||'').trim()}))`);
+  const tabNames = await evalJSON(page, `JSON.stringify(Array.from(document.querySelectorAll('.tabbar .tab')).map(function(e){return (e.textContent||'').trim()}))`);
   check('Tab 文案为 聊天/角色/API/设置', Array.isArray(tabNames) && tabNames.join(',') === '聊天,角色,API,设置', JSON.stringify(tabNames));
   await sleep(600);
   await shot(page, '10-main-chat-list.png');

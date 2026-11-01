@@ -115,6 +115,22 @@
           continue;
         }
       }
+      // 单星号斜体：*动作/神态* → <em class="md-action">（在 **加粗** 之后匹配；未闭合不转换）
+      if (ch === '*' && s.charAt(i + 1) !== '*') {
+        var endIt = -1;
+        for (var k = i + 1; k < len; k++) {
+          if (s.charAt(k) !== '*') continue;
+          // 跳过 ** 的一部分，避免把 *a** 误判
+          if (s.charAt(k - 1) === '*' || s.charAt(k + 1) === '*') continue;
+          endIt = k;
+          break;
+        }
+        if (endIt > i + 1 && s.slice(i + 1, endIt).trim()) {
+          out += '<em class="md-action">' + s.slice(i + 1, endIt) + '</em>';
+          i = endIt + 1;
+          continue;
+        }
+      }
       out += ch;
       i += 1;
     }
@@ -223,11 +239,22 @@
   // 摘要：去 markdown 标记、压缩空白、截断
   K.preview = function (text, max) {
     var s = String(text === undefined || text === null ? '' : text);
+    s = s.replace(/\[\[img:[^\]]*\]\]/g, '［图片］');
     s = s.replace(/```[\s\S]*?```/g, '［代码］');
     s = s.replace(/[#>*_`~]/g, '');
     s = s.replace(/\s+/g, ' ').trim();
     if (!s) return '';
     return s.length > (max || 60) ? s.slice(0, max || 60) + '…' : s;
+  };
+
+  // 消息摘要：优先文本；只有附件时给「［图片］/［文件］名称」
+  K.previewMessage = function (m, max) {
+    if (!m) return '';
+    var text = K.preview(m.content, max);
+    var att = Array.isArray(m.attachments) ? m.attachments[0] : null;
+    if (!att) return text;
+    var label = att.kind === 'image' ? '［图片］' : '［文件］' + (att.name || '');
+    return text ? text + ' ' + label : label;
   };
 
   K.sortMessages = function (list) {
@@ -246,7 +273,7 @@
       if (!s) return null;
       s.updatedAt = U.now();
       if (lastMsg) {
-        s.lastText = K.preview(lastMsg.content, 60);
+        s.lastText = K.previewMessage(lastMsg, 60);
         s.lastRole = lastMsg.role;
         s.lastAt = lastMsg.createdAt || U.now();
       }
@@ -270,7 +297,36 @@
     return s;
   };
 
-  K.buildSystemPrompt = function (character, persona, preset) {
+  /* 动作/神态的表达格式约定（配合 K.md 的单星号斜体渲染） */
+  K.EXPRESSION_PROMPT = '【表达格式】动作、神态、环境描写用 *星号包裹*（例如 *她低头笑了笑*），人物说出的话直接用正文，不要整段加引号。';
+  /* 上帝模式：角色知道自己是被 AI 扮演的虚拟角色 */
+  K.GOD_MODE_PROMPT = '【上帝模式】你清楚自己只是这个 App 里的虚拟角色，由 AI 扮演，不是真实的人。用户可以随时和你聊这件事；\n' +
+    '承认这一点时保持角色口吻，不要破坏设定，也不要假装自己是真人或声称有真实身体/现实经历。';
+
+  // 角色图片库清单：优先用 App.Media.promptBlock；media.js 缺失时按契约格式本地兜底
+  K.imagesPromptBlock = function (images) {
+    var list = Array.isArray(images) ? images.filter(Boolean) : [];
+    if (!list.length) return '';
+    try {
+      if (App.Media && typeof App.Media.promptBlock === 'function') {
+        var block = App.Media.promptBlock(list);
+        if (block) return String(block);
+      }
+    } catch (e) { /* 退回本地实现 */ }
+    var pick = list.length > 30 ? list.slice(list.length - 30) : list;
+    function oneLine(v) { return String(v === undefined || v === null ? '' : v).replace(/\s+/g, ' ').trim(); }
+    var rows = pick.map(function (img) {
+      var name = oneLine(img.name) || '未命名图片';
+      var caption = oneLine(img.caption);
+      return '- ID=' + oneLine(img.id) + '｜名称=' + name + (caption ? '｜说明=' + caption : '｜说明=');
+    });
+    return '【图片库】你有一组可以主动发给用户的图片：\n' + rows.join('\n') +
+      '\n怎么发图：在回复中单独一行写 [[img:图片ID]]（例如 [[img:' + oneLine(pick[0] && pick[0].id) + ']]），' +
+      '可以在这行前后各配一句话。只能使用上面列出的 ID，禁止编造不存在的 ID；不需要发图时不要输出该标记。' +
+      (list.length > pick.length ? '\n（图片较多，只列出了最近 ' + pick.length + ' 张）' : '');
+  };
+
+  K.buildSystemPrompt = function (character, persona, preset, opts) {
     var P = App.Prompts || {};
     var parts = [];
     var sys = '';
@@ -300,19 +356,45 @@
       var extra = String(preset.instructTemplate || preset.systemPrompt || '').trim();
       if (extra) parts.push(extra);
     }
+    // 第 4 参可选的表达格式 / 图片库 / 上帝模式（旧 3 参调用保持原行为）
+    opts = opts || null;
+    if (opts && opts.expressionFormat !== false) parts.push(K.EXPRESSION_PROMPT);
+    if (opts && opts.images && opts.images.length) {
+      var imgBlock = K.imagesPromptBlock(opts.images);
+      if (imgBlock) parts.push(imgBlock);
+    }
+    if (opts && opts.godMode === true) parts.push(K.GOD_MODE_PROMPT);
     return parts.join('\n\n');
+  };
+
+  // 单条消息的 token 估算：文本 + 附件（图片 85 tok/张，文件按文本字数）
+  K.estimateMessageTokens = function (m) {
+    if (!m) return 0;
+    var total = U.estimateTokens(m.content) + 4;
+    var atts = Array.isArray(m.attachments) ? m.attachments : [];
+    atts.forEach(function (att) {
+      if (!att) return;
+      if (att.kind === 'image') total += 85;
+      else if (att.kind === 'file') total += U.estimateTokens(att.text || '') + 12;
+    });
+    return total;
   };
 
   // 上下文裁剪：system 永不丢；保留最近一轮完整；超出预算从最旧丢
   K.buildContext = function (opts) {
     opts = opts || {};
     var budget = opts.tokenBudget || K.TOKEN_BUDGET;
-    var sys = K.buildSystemPrompt(opts.character, opts.persona, opts.preset);
+    var sys = K.buildSystemPrompt(opts.character, opts.persona, opts.preset, {
+      expressionFormat: opts.expressionFormat,
+      images: opts.images,
+      godMode: opts.godMode
+    });
     var list = (opts.messages || []).filter(function (m) {
       if (!m) return false;
       if (m.role !== 'user' && m.role !== 'assistant') return false;
       if (m.status === 'error') return false;
-      return String(m.content || '').trim() !== '';
+      var hasAttach = Array.isArray(m.attachments) && m.attachments.length > 0;
+      return String(m.content || '').trim() !== '' || hasAttach;
     });
     var sysTokens = U.estimateTokens(sys);
     var left = Math.max(600, budget - sysTokens);
@@ -322,19 +404,25 @@
     }
     var tail = lastUser >= 0 ? list.slice(lastUser) : [];
     var used = 0;
-    tail.forEach(function (m) { used += U.estimateTokens(m.content) + 4; });
+    tail.forEach(function (m) { used += K.estimateMessageTokens(m); });
     var head = [];
     var start = lastUser >= 0 ? lastUser - 1 : list.length - 1;
     for (var j = start; j >= 0; j--) {
-      var t = U.estimateTokens(list[j].content) + 4;
+      var t = K.estimateMessageTokens(list[j]);
       if (used + t > left) break;
       head.unshift(list[j]);
       used += t;
     }
     var picked = head.concat(tail);
+    // 保持对话从用户消息开始（裁掉头部孤立的 assistant，避免上游模型困惑）
+    while (picked.length && picked[0].role === 'assistant') picked.shift();
     var messages = [];
     if (sys) messages.push({ role: 'system', content: sys });
-    picked.forEach(function (m) { messages.push({ role: m.role, content: m.content }); });
+    picked.forEach(function (m) {
+      var row = { role: m.role, content: String(m.content || '') };
+      if (Array.isArray(m.attachments) && m.attachments.length) row.attachments = m.attachments;
+      messages.push(row);
+    });
     return {
       messages: messages,
       usedTokens: used + sysTokens,
@@ -622,7 +710,7 @@
             var sorted = K.sortMessages(msgs);
             var last = sorted[sorted.length - 1];
             if (last) {
-              state.previews[s.id] = { text: K.preview(last.content, 60), role: last.role, at: last.createdAt };
+              state.previews[s.id] = { text: K.previewMessage(last, 60), role: last.role, at: last.createdAt };
             }
           }).catch(function () {
             /* 单条失败不影响整体 */
@@ -928,7 +1016,7 @@
                 tokensOut: 0,
                 createdAt: U.now()
               }).then(function (msg) {
-                saved.lastText = K.preview(msg.content, 60);
+                saved.lastText = K.previewMessage(msg, 60);
                 saved.lastRole = 'assistant';
                 saved.lastAt = msg.createdAt;
                 return D.put('sessions', saved);

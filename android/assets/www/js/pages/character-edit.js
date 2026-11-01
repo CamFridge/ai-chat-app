@@ -6,7 +6,8 @@
  *   - 编辑全部字段（陪聊 / 助手各自显示对应字段）；
  *   - 类型可切换，但需要二次确认，并提示部分字段会重置；
  *   - 保存落库（保留 id / createdAt，重建 systemPrompt）；
- *   - 「让它更像…」：可选，固定用引导 API 按意见微调。
+ *   - 「让它更像…」：可选，固定用引导 API 按意见微调；
+ *   - 角色图片库：查看 / 添加 / 重命名 / 改说明 / 删除（落 characterImages 表，供聊天里主动发图）。
  * ============================================================ */
 (function () {
   'use strict';
@@ -27,6 +28,11 @@
     presets: [],
     userWvs: [],
     providers: [],
+    images: [],        // 角色图片库（characterImages 表）
+    imgBusy: false,    // 正在选图 / 添加图片
+    imgModal: null,    // 图片库弹窗句柄
+    imgGridBox: null,  // 弹窗内网格容器（新增/删除后局部刷新）
+    imgCountEl: null,  // 弹窗内数量文案
     destroyed: false,
     busy: false,
     loaded: false
@@ -84,6 +90,9 @@
 
     // 世界观
     list.appendChild(worldviewRow());
+
+    // 角色图片库（聊天时 TA 可以主动发图）
+    list.appendChild(imageRow());
 
     // 类型专属字段
     var keys = state.card.type === 'assistant' ? ASSISTANT_KEYS : COMPANION_KEYS;
@@ -168,6 +177,280 @@
     return cell;
   }
 
+  /* ------------------------------------------------------------
+   * 角色图片库
+   * ---------------------------------------------------------- */
+
+  function imageRow() {
+    var n = (state.images || []).length;
+    var cell = UI.el('div', {
+      class: 'cell ck-field',
+      attrs: { role: 'button', tabindex: '0', 'data-guide-focus': 'characterImages' }
+    },
+      UI.el('div', { class: 'main' },
+        UI.el('div', { class: 'ck-field-label' },
+          UI.el('span', { class: 'ck-field-title', text: '角色图片库' })
+        ),
+        UI.el('div', { class: 'ck-field-value', text: n + ' 张 · 可让 TA 在聊天里发给你' })
+      ),
+      UI.el('span', { class: 'chev', html: UI.icon('chev', 17) })
+    );
+    cell.addEventListener('click', openImageModal);
+    return cell;
+  }
+
+  // 读取图片库（优先 App.Media，缺失时直接读 characterImages 表兜底）
+  function loadImages() {
+    if (!state.id) return Promise.resolve([]);
+    var M = App.Media;
+    if (M && typeof M.list === 'function') {
+      return Promise.resolve(M.list(state.id)).then(function (rows) {
+        return Array.isArray(rows) ? rows : [];
+      }).catch(function (err) {
+        console.error('[characterEdit] 读取图片库失败', err);
+        return [];
+      });
+    }
+    return DB.byIndex('characterImages', 'characterId', state.id).then(function (rows) {
+      return (rows || []).slice().sort(function (a, b) {
+        return (Number(a.createdAt) || 0) - (Number(b.createdAt) || 0);
+      });
+    }).catch(function (err) {
+      console.error('[characterEdit] 读取图片库失败', err);
+      return [];
+    });
+  }
+
+  function refreshImages() {
+    return loadImages().then(function (rows) {
+      if (state.destroyed) return null;
+      state.images = rows;
+      render();          // 刷新表单里「N 张」副标题
+      renderImageGrid(); // 刷新弹窗网格
+      return rows;
+    });
+  }
+
+  function openImageModal() {
+    if (!state.card || state.destroyed) return;
+    if (state.imgModal) return;
+
+    var content = UI.el('div', { class: 'ck-img-modal' });
+    content.appendChild(UI.el('div', { class: 'ck-img-desc', text: '把图片放进 TA 的图片库。聊天时 TA 可以主动挑一张发给你；也可以让引导助手帮你添加。' }));
+
+    var count = UI.el('div', { class: 'ck-img-count' });
+    var gridBox = UI.el('div', {});
+    content.appendChild(count);
+    content.appendChild(gridBox);
+
+    var foot = UI.el('div', { class: 'ck-img-foot' });
+    var addBtn = UI.el('button', {
+      class: 'btn primary block',
+      type: 'button',
+      attrs: { 'data-guide-tap': 'addCharacterImage' },
+      text: '＋ 添加图片'
+    });
+    var helpBtn = UI.el('button', { class: 'btn ghost block', type: 'button', text: '让引导助手帮我加' });
+    addBtn.addEventListener('click', addLibraryImage);
+    helpBtn.addEventListener('click', helpAddImage);
+    foot.appendChild(addBtn);
+    foot.appendChild(helpBtn);
+    content.appendChild(foot);
+
+    state.imgGridBox = gridBox;
+    state.imgCountEl = count;
+    renderImageGrid();
+
+    state.imgModal = UI.modal({
+      title: '角色图片库',
+      content: content,
+      dismissible: true,
+      onClose: function () {
+        state.imgModal = null;
+        state.imgGridBox = null;
+        state.imgCountEl = null;
+      }
+    });
+    // 内容区约 80vh（base.css 里 .modal-body 默认 45vh；小屏时按视口高度收敛）
+    if (state.imgModal && state.imgModal.box) state.imgModal.box.style.maxHeight = 'min(80vh, calc(100vh - 150px))';
+  }
+
+  function renderImageGrid() {
+    var box = state.imgGridBox;
+    if (!box) return;
+    UI.clear(box);
+    if (state.imgCountEl) state.imgCountEl.textContent = state.images.length ? ('共 ' + state.images.length + ' 张') : '';
+
+    if (!state.images.length) {
+      box.appendChild(UI.el('div', { class: 'ck-img-empty', text: '还没有图片。添加后，聊天时角色可以主动发给你。' }));
+      return;
+    }
+
+    var grid = UI.el('div', { class: 'ck-img-grid' });
+    state.images.forEach(function (rec) {
+      var cell = UI.el('div', { class: 'ck-img-cell', attrs: { role: 'button', tabindex: '0' } });
+      cell.appendChild(UI.el('img', { attrs: { src: rec.dataUri, alt: rec.name || '图片', loading: 'lazy' } }));
+      cell.appendChild(UI.el('div', { class: 'ck-img-cell-name', text: rec.name || '图片' }));
+
+      var more = UI.el('button', {
+        class: 'ck-img-more',
+        type: 'button',
+        attrs: { 'aria-label': '图片操作' },
+        html: UI.icon('more', 16)
+      });
+      more.addEventListener('click', function (ev) {
+        ev.stopPropagation();
+        openImageMenu(rec);
+      });
+      cell.appendChild(more);
+
+      cell.addEventListener('click', function () { previewImage(rec); });
+      grid.appendChild(cell);
+    });
+    box.appendChild(grid);
+  }
+
+  function previewImage(rec) {
+    var M = App.Media;
+    if (!M || typeof M.preview !== 'function') {
+      UI.toast('当前环境不支持图片预览', 'error');
+      return;
+    }
+    try {
+      Promise.resolve(M.preview(rec)).catch(function (err) {
+        console.error('[characterEdit] 预览图片失败', err);
+        UI.toast('无法预览这张图片', 'error');
+      });
+    } catch (err) {
+      console.error('[characterEdit] 预览图片失败', err);
+      UI.toast('无法预览这张图片', 'error');
+    }
+  }
+
+  function addLibraryImage() {
+    if (state.imgBusy) return;
+    if (!state.id) {
+      UI.toast('请先保存角色后再添加图片', 'error');
+      return;
+    }
+    var M = App.Media;
+    if (!M || typeof M.pickImage !== 'function' || typeof M.addImage !== 'function') {
+      UI.toast('图片功能暂不可用，请稍后重试', 'error');
+      return;
+    }
+
+    state.imgBusy = true;
+    Promise.resolve(M.pickImage())
+      .then(function (att) {
+        if (!att) return null; // 用户取消
+        return M.addImage(state.id, att, { source: 'user', caption: '' });
+      })
+      .then(function (rec) {
+        if (!rec) return null;
+        UI.toast('已添加到图片库', 'ok');
+        return refreshImages();
+      })
+      .catch(function (err) {
+        console.error('[characterEdit] 添加图片失败', err);
+        UI.toast('添加图片失败：' + ((err && err.message) || '未知错误'), 'error');
+      })
+      .then(function () {
+        state.imgBusy = false;
+      });
+  }
+
+  function openImageMenu(rec) {
+    var M = App.Media;
+    if (!M) return Promise.resolve(null);
+    return UI.sheet({
+      title: rec.name || '图片',
+      items: [
+        { id: 'rename', label: '重命名', icon: 'edit' },
+        { id: 'caption', label: '修改说明', desc: rec.caption || '给 TA 一个提示，说明这张图是什么', icon: 'edit' },
+        { id: 'delete', label: '删除', icon: 'delete', danger: true }
+      ]
+    }).then(function (item) {
+      if (!item) return null;
+      if (item.id === 'rename') return renameImage(rec);
+      if (item.id === 'caption') return editImageCaption(rec);
+      if (item.id === 'delete') return deleteImage(rec);
+      return null;
+    }).catch(function (err) {
+      console.error('[characterEdit] 图片操作失败', err);
+      return null;
+    });
+  }
+
+  function renameImage(rec) {
+    return UI.prompt({
+      title: '重命名图片',
+      value: rec.name || '',
+      placeholder: '例如：猫猫照片',
+      okText: '保存'
+    }).then(function (text) {
+      var name = String(text || '').trim();
+      if (!name || name === rec.name) return null;
+      return Promise.resolve(App.Media.update(rec.id, { name: name })).then(function () {
+        UI.toast('已重命名', 'ok');
+        return refreshImages();
+      });
+    }).catch(function (err) {
+      console.error('[characterEdit] 重命名图片失败', err);
+      UI.toast('重命名失败：' + ((err && err.message) || '未知错误'), 'error');
+      return null;
+    });
+  }
+
+  function editImageCaption(rec) {
+    return UI.prompt({
+      title: '修改图片说明',
+      message: '写一句说明，帮助 TA 知道这张图是什么、什么时候发给你。',
+      value: rec.caption || '',
+      placeholder: '例如：我养的猫，心情好时发给你',
+      multiline: true,
+      okText: '保存'
+    }).then(function (text) {
+      var caption = String(text == null ? '' : text).trim();
+      if (caption === (rec.caption || '')) return null;
+      return Promise.resolve(App.Media.update(rec.id, { caption: caption })).then(function () {
+        UI.toast('已更新说明', 'ok');
+        return refreshImages();
+      });
+    }).catch(function (err) {
+      console.error('[characterEdit] 修改图片说明失败', err);
+      UI.toast('修改失败：' + ((err && err.message) || '未知错误'), 'error');
+      return null;
+    });
+  }
+
+  function deleteImage(rec) {
+    return UI.confirm({
+      title: '删除图片',
+      message: '确定删除「' + (rec.name || '这张图片') + '」吗？删除后不可恢复。',
+      okText: '删除',
+      danger: true
+    }).then(function (ok) {
+      if (!ok) return null;
+      return Promise.resolve(App.Media.remove(rec.id)).then(function () {
+        UI.toast('已删除', 'ok');
+        return refreshImages();
+      });
+    }).catch(function (err) {
+      console.error('[characterEdit] 删除图片失败', err);
+      UI.toast('删除失败：' + ((err && err.message) || '未知错误'), 'error');
+      return null;
+    });
+  }
+
+  function helpAddImage() {
+    if (App.Help && typeof App.Help.open === 'function') {
+      App.Help.open({ source: 'character_images', page: PAGE });
+      UI.toast('可以在引导助手里发送图片，让它帮你加到「' + (state.card && state.card.name ? state.card.name : '这个角色') + '」的图片库', 'ok', 3200);
+    } else {
+      UI.toast('引导助手暂不可用', 'error');
+    }
+  }
+
   function dialogsRow() {
     var list = state.card.exampleDialogues || [];
     var text = list.map(function (d) {
@@ -216,6 +499,7 @@
   function updateGuide() {
     if (!state.page || !state.page.guide || !state.card) return;
     var filled = { name: !!state.card.name, type: true };
+    filled.characterImages = (state.images || []).length > 0;
     var missing = [];
     if (!state.card.name) missing.push('name');
     if (state.card.type === 'assistant') {
@@ -513,9 +797,24 @@
       state.destroyed = false;
       state.busy = false;
       state.loaded = false;
+      state.images = [];
+      state.imgBusy = false;
+      state.imgModal = null;
+      state.imgGridBox = null;
+      state.imgCountEl = null;
       state.id = (params && params.id) || '';
 
       page.setTitle('编辑角色');
+
+      page.onDestroy(function () {
+        state.destroyed = true;
+        if (state.imgModal) {
+          try { state.imgModal.close(); } catch (e) { /* 忽略 */ }
+          state.imgModal = null;
+        }
+        state.imgGridBox = null;
+        state.imgCountEl = null;
+      });
 
       if (!state.id) {
         UI.clear(root);
@@ -559,7 +858,12 @@
         state.loaded = true;
 
         page.setTitle('编辑角色');
-        render();
+        return loadImages().then(function (rows) {
+          if (state.destroyed) return null;
+          state.images = rows || [];
+          render();
+          return null;
+        });
       }).catch(function (err) {
         console.error('[characterEdit] 加载失败', err);
         if (state.destroyed) return;

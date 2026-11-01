@@ -63,7 +63,11 @@
         followBottom: true,
         lastDraft: '',
         lastError: null,
-        metaRefreshing: false
+        metaRefreshing: false,
+        godMode: false,
+        images: [],
+        pendingAttach: null,
+        imgCache: {}
       };
 
       /* ---------------- 页面骨架 ---------------- */
@@ -75,12 +79,18 @@
         attrs: { rows: '1', placeholder: '发消息…', 'aria-label': '输入消息' }
       });
       var sendBtn = App.UI.el('button', { class: 'composer-send', attrs: { type: 'button' }, text: '发送' });
+      // 附件按钮（相册图片 / 文件），契约 §4.1
+      var attachBtn = App.UI.el('button', {
+        class: 'composer-attach',
+        attrs: { type: 'button', 'aria-label': '添加图片或文件', title: '添加图片或文件' },
+        html: K.iconHtml('plus') || '＋'
+      });
+      var attachChips = App.UI.el('div', { class: 'composer-attach-chips hidden' });
       inputEl.setAttribute('data-guide-focus', 'composer');
       sendBtn.setAttribute('data-guide-tap', 'send');
-      var composer = App.UI.el('div', { class: 'composer' },
-        App.UI.el('div', { class: 'composer-input-wrap' }, inputEl),
-        sendBtn
-      );
+      attachBtn.setAttribute('data-guide-tap', 'attach');
+      var composerInputWrap = App.UI.el('div', { class: 'composer-input-wrap composer-input-col' }, attachChips, inputEl);
+      var composer = App.UI.el('div', { class: 'composer' }, attachBtn, composerInputWrap, sendBtn);
       var wrap = App.UI.el('div', { class: 'chat-wrap chat-page-wrap' }, topbar, listEl, noticeEl, composer);
       root.appendChild(wrap);
 
@@ -173,13 +183,139 @@
         return box;
       }
 
+      /* ---------------- 附件 / 图片库渲染（契约 §4.1 §4.2） ---------------- */
+      function fmtSize(bytes) {
+        var n = Number(bytes);
+        if (!n || n < 0) return '';
+        if (n < 1024) return n + ' B';
+        if (n < 1024 * 1024) return (n / 1024).toFixed(n < 10240 ? 1 : 0) + ' KB';
+        return (n / 1024 / 1024).toFixed(1) + ' MB';
+      }
+
+      function mediaApi() { return App.Media || null; }
+
+      // 图片库记录异步获取（同一 id 只查一次，失败缓存 null）
+      function imgRecord(id) {
+        if (!id) return Promise.resolve(null);
+        if (st.imgCache[id] !== undefined) return st.imgCache[id];
+        var cached;
+        try {
+          var M = mediaApi();
+          cached = (M && typeof M.get === 'function') ? Promise.resolve(M.get(id)) : Promise.resolve(null);
+        } catch (e) {
+          cached = Promise.resolve(null);
+        }
+        st.imgCache[id] = cached.catch(function () { return null; });
+        return st.imgCache[id];
+      }
+
+      // 按 [[img:ID]] 切分内容：文本段走 K.md，图片段走图片库
+      var IMG_TOKEN_RE = /\[\[img:([A-Za-z0-9_\-]+)\]\]/g;
+      function splitImageTokens(text) {
+        var src = String(text || '');
+        var parts = [];
+        var last = 0;
+        var m;
+        IMG_TOKEN_RE.lastIndex = 0;
+        while ((m = IMG_TOKEN_RE.exec(src))) {
+          if (m.index > last) parts.push({ type: 'text', text: src.slice(last, m.index) });
+          parts.push({ type: 'img', id: m[1] });
+          last = m.index + m[0].length;
+        }
+        if (last < src.length) parts.push({ type: 'text', text: src.slice(last) });
+        return parts;
+      }
+
+      function buildImageNode(id) {
+        var box = App.UI.el('div', { class: 'msg-image', dataset: { img: id || '' } });
+        box.appendChild(App.UI.el('div', { class: 'msg-image-loading', text: '图片加载中…' }));
+        imgRecord(id).then(function (rec) {
+          K.clear(box);
+          if (rec && rec.dataUri) {
+            box.appendChild(App.UI.el('img', {
+              class: 'msg-image-img',
+              attrs: { src: rec.dataUri, alt: rec.name || '图片', loading: 'lazy' }
+            }));
+            if (rec.name) box.appendChild(App.UI.el('div', { class: 'msg-image-name', text: rec.name }));
+          } else {
+            box.classList.add('missing');
+            box.appendChild(App.UI.el('div', { class: 'msg-image-missing', text: '图片已不可用' }));
+          }
+        }).catch(function () {
+          K.clear(box);
+          box.classList.add('missing');
+          box.appendChild(App.UI.el('div', { class: 'msg-image-missing', text: '图片已不可用' }));
+        });
+        return box;
+      }
+
+      // 渲染助手内容（文本 + 图片混排）；无图片标记时走快路径
+      function renderRichContent(container, text) {
+        var src = String(text || '');
+        if (src.indexOf('[[img:') === -1) {
+          container.innerHTML = K.md(src);
+          return;
+        }
+        K.clear(container);
+        splitImageTokens(src).forEach(function (part) {
+          if (part.type === 'img') {
+            container.appendChild(buildImageNode(part.id));
+            return;
+          }
+          if (!part.text) return;
+          var box = App.UI.el('div', { class: 'md-part' });
+          box.innerHTML = K.md(part.text);
+          container.appendChild(box);
+        });
+      }
+
+      // 用户消息的附件（图片缩略图 / 文件卡片）
+      function buildAttachNode(att) {
+        if (!att || !att.kind) return null;
+        if (att.kind === 'image') {
+          if (!att.dataUri) return null;
+          var img = App.UI.el('img', {
+            class: 'msg-attach-img',
+            attrs: { src: att.dataUri, alt: att.name || '图片', loading: 'lazy' }
+          });
+          img.setAttribute('role', 'button');
+          img.setAttribute('data-att', 'image');
+          return img;
+        }
+        var card = App.UI.el('div', {
+          class: 'msg-attach-file',
+          attrs: { role: 'button', tabindex: '0', 'aria-label': '查看文件内容' }
+        },
+          App.UI.el('span', { class: 'msg-attach-file-icon', html: K.iconHtml('link') }),
+          App.UI.el('span', { class: 'msg-attach-file-main' },
+            App.UI.el('span', { class: 'msg-attach-file-name', text: att.name || '文件' }),
+            App.UI.el('span', {
+              class: 'msg-attach-file-size',
+              text: fmtSize(att.size) + (att.truncated ? ' · 已截断' : '')
+            })
+          )
+        );
+        return card;
+      }
+
       function buildBubble(m) {
         var bubble = App.UI.el('div', { class: 'msg-bubble' });
         if (m.role === 'user') {
-          bubble.textContent = m.content || '';
+          // 图片消息内容可能为空，只显示附件
+          var hasText = String(m.content || '').trim() !== '';
+          if (hasText) bubble.textContent = m.content;
+          var atts = Array.isArray(m.attachments) ? m.attachments : [];
+          if (atts.length) {
+            bubble.classList.add('has-attach');
+            if (!hasText && atts[0] && atts[0].kind === 'image') bubble.classList.add('attach-only');
+            atts.forEach(function (att) {
+              var node = buildAttachNode(att);
+              if (node) bubble.appendChild(node);
+            });
+          }
         } else {
           bubble.classList.add('md');
-          bubble.innerHTML = m.content ? K.md(m.content) : '';
+          renderRichContent(bubble, m.content);
         }
         var streaming = m.status === 'streaming';
         if (streaming) {
@@ -260,10 +396,12 @@
           sendBtn.textContent = '停止';
           sendBtn.classList.add('stop');
           sendBtn.setAttribute('aria-label', '停止生成');
+          if (attachBtn) attachBtn.classList.add('disabled');
         } else {
           sendBtn.textContent = '发送';
           sendBtn.classList.remove('stop');
           sendBtn.setAttribute('aria-label', '发送');
+          if (attachBtn) attachBtn.classList.remove('disabled');
         }
       }
 
@@ -389,9 +527,13 @@
         if (!node) return;
         var bubble = node.querySelector('.msg-bubble');
         if (!bubble) return;
-        if (s.target.role === 'user') bubble.textContent = s.target.content;
-        else bubble.innerHTML = K.md(s.target.content || '');
-        bubble.classList.remove('typing');
+        if (s.target.role === 'user') {
+          bubble.textContent = s.target.content;
+        } else if (String(s.target.content || '').trim()) {
+          // 空内容（或只有空白）时保留「正在输入」动画，避免气泡被 :empty 规则隐藏
+          renderRichContent(bubble, s.target.content);
+          bubble.classList.remove('typing');
+        }
         bubble.classList.add('streaming');
         if (st.followBottom) scrollToBottom(true);
       }
@@ -503,7 +645,14 @@
         }
         var ctx;
         try {
-          ctx = K.buildContext({ character: st.character, persona: st.persona, preset: st.preset, messages: history });
+          ctx = K.buildContext({
+            character: st.character,
+            persona: st.persona,
+            preset: st.preset,
+            messages: history,
+            godMode: st.godMode === true,
+            images: st.images
+          });
         } catch (e) {
           return Promise.resolve(failTarget(target, { code: 'unknown', message: '上下文组装失败：' + ((e && e.message) || ''), title: '生成失败' }));
         }
@@ -584,6 +733,161 @@
         }, 600);
       }
 
+      /* ---------------- 附件选择（契约 §4.1） ---------------- */
+      // 输入框上方的待发送附件 chip
+      function renderAttachChips() {
+        if (!attachChips) return;
+        K.clear(attachChips);
+        var att = st.pendingAttach;
+        if (!att) {
+          attachChips.classList.add('hidden');
+          return;
+        }
+        attachChips.classList.remove('hidden');
+        var chip = App.UI.el('div', { class: 'composer-attach-chip' });
+        if (att.kind === 'image' && att.dataUri) {
+          chip.appendChild(App.UI.el('img', {
+            class: 'composer-attach-thumb',
+            attrs: { src: att.dataUri, alt: att.name || '图片' }
+          }));
+        } else {
+          chip.appendChild(App.UI.el('span', { class: 'composer-attach-fileicon', html: K.iconHtml('link') }));
+        }
+        chip.appendChild(App.UI.el('span', {
+          class: 'composer-attach-name',
+          text: att.name || (att.kind === 'image' ? '图片' : '文件')
+        }));
+        var remove = App.UI.el('button', {
+          class: 'composer-attach-remove',
+          attrs: { type: 'button', 'aria-label': '移除附件' },
+          text: '×'
+        });
+        remove.addEventListener('click', function (ev) {
+          ev.preventDefault();
+          ev.stopPropagation();
+          st.pendingAttach = null;
+          renderAttachChips();
+        });
+        chip.appendChild(remove);
+        attachChips.appendChild(chip);
+      }
+
+      function pickAttachImage() {
+        var M = mediaApi();
+        if (!M || typeof M.pickImage !== 'function') {
+          toast('当前版本不支持发送图片', 'error');
+          return Promise.resolve();
+        }
+        var p;
+        try { p = M.pickImage(); } catch (e) { p = Promise.reject(e); }
+        return Promise.resolve(p).then(function (att) {
+          if (!att) return null;
+          if (!att.kind) att.kind = 'image';
+          if (!att.dataUri) { toast('图片读取失败，请重试', 'error'); return null; }
+          st.pendingAttach = att;
+          renderAttachChips();
+          try { inputEl.focus(); } catch (e) { /* 忽略 */ }
+          return null;
+        }).catch(function (err) {
+          console.error('[chat] 选择图片失败', err);
+          toast((err && err.message) || '图片读取失败，未添加', 'error');
+          return null;
+        });
+      }
+
+      function pickAttachFile() {
+        var M = mediaApi();
+        if (!M || typeof M.pickFile !== 'function') {
+          toast('当前版本不支持发送文件', 'error');
+          return Promise.resolve();
+        }
+        var p;
+        try { p = M.pickFile(); } catch (e) { p = Promise.reject(e); }
+        return Promise.resolve(p).then(function (att) {
+          if (!att) return null;
+          if (!att.kind) att.kind = 'file';
+          if (!String(att.text || '').trim()) { toast('这个文件没有可读取的文本内容', 'error'); return null; }
+          st.pendingAttach = att;
+          renderAttachChips();
+          try { inputEl.focus(); } catch (e) { /* 忽略 */ }
+          return null;
+        }).catch(function (err) {
+          console.error('[chat] 选择文件失败', err);
+          toast((err && err.message) || '文件读取失败，未添加', 'error');
+          return null;
+        });
+      }
+
+      function openAttachSheet() {
+        if (st.streaming) { toast('生成中不能添加附件，请先停止'); return; }
+        var M = mediaApi();
+        if (!M || typeof M.pickImage !== 'function') {
+          toast('当前版本不支持发送图片或文件', 'error');
+          return;
+        }
+        K.sheet({
+          title: '添加附件',
+          items: [
+            { id: 'image', label: '相册图片', desc: '选一张图发给 TA（会自动压缩）', icon: 'star' },
+            { id: 'file', label: '文件', desc: '文本类文件内容会作为文本发给模型', icon: 'link' }
+          ]
+        }).then(function (item) {
+          var id = K.itemId(item);
+          if (id === 'image') return pickAttachImage();
+          if (id === 'file') return pickAttachFile();
+          return null;
+        }).catch(function (err) {
+          console.error('[chat] 打开附件菜单失败', err);
+        });
+      }
+
+      /* ---------------- 图片 / 文件预览 ---------------- */
+      function previewDataUri(dataUri, name) {
+        if (!dataUri) { toast('图片已不可用', 'error'); return; }
+        var M = mediaApi();
+        if (M && typeof M.preview === 'function') {
+          try { M.preview(dataUri, { name: name || '' }); return; } catch (e) { /* 回退自绘 */ }
+        }
+        try {
+          App.UI.modal({
+            title: name || '图片',
+            content: App.UI.el('img', { class: 'msg-image-full', attrs: { src: dataUri, alt: name || '图片' } }),
+            actions: [{ text: '关闭' }]
+          });
+        } catch (e) { /* 忽略 */ }
+      }
+
+      function previewAttachment(att) {
+        if (!att) return;
+        if (att.kind === 'file') { openFileTextModal(att); return; }
+        if (att.kind === 'image') previewDataUri(att.dataUri, att.name);
+      }
+
+      function previewLibraryImage(id) {
+        imgRecord(id).then(function (rec) {
+          if (!rec || !rec.dataUri) { toast('图片已不可用', 'error'); return; }
+          var M = mediaApi();
+          if (M && typeof M.preview === 'function') {
+            try { M.preview(rec); return; } catch (e) { /* 回退自绘 */ }
+          }
+          previewDataUri(rec.dataUri, rec.name);
+        }).catch(function () { toast('图片已不可用', 'error'); });
+      }
+
+      function openFileTextModal(att) {
+        if (!att) return;
+        var meta = (att.name || '文件') + (att.size ? ' · ' + fmtSize(att.size) : '') + (att.truncated ? ' · 已截断' : '');
+        var wrap = App.UI.el('div', { class: 'msg-file-modal' },
+          App.UI.el('div', { class: 'msg-file-meta', text: meta }),
+          App.UI.el('pre', { class: 'msg-file-text', text: String(att.text || '（没有可显示的内容）') })
+        );
+        try {
+          App.UI.modal({ title: '文件内容', content: wrap, alignLeft: true, actions: [{ text: '关闭' }] });
+        } catch (e) {
+          toast('打不开文件内容', 'error');
+        }
+      }
+
       /* ---------------- 发送 / 重新生成 / 继续生成 ---------------- */
       function lastAssistant() {
         var last = lastMessage();
@@ -593,19 +897,23 @@
       function send() {
         if (st.streaming) { stopStream(); return; }
         var text = String(inputEl.value || '').replace(/\s+$/, '');
-        if (!text.trim()) { toast('请输入内容'); return; }
+        var attach = st.pendingAttach || null;
+        if (!text.trim() && !attach) { toast('请输入内容或添加附件'); return; }
         if (typeof navigator !== 'undefined' && navigator.onLine === false) {
           toast('网络不可用，消息未发送', 'error');
           return;
         }
         if (!st.character) { toast('会话角色已被删除，无法继续聊天', 'error'); return; }
         st.lastDraft = text;
+        st.pendingAttach = null;
+        renderAttachChips();
         inputEl.value = '';
         autosize();
         var userMsg = {
           sessionId: sessionId,
           role: 'user',
           content: text,
+          attachments: attach ? [attach] : [],
           variantIndex: 0,
           isActive: true,
           status: 'ok',
@@ -626,8 +934,10 @@
           return createReplyFor(st.messages[st.messages.length - 1]);
         }).catch(function (err) {
           console.error('[chat] 发送失败', err);
-          // 用户消息都没落库成功：把文本还回输入框
+          // 用户消息都没落库成功：把文本与附件还回输入区
           if (!inputEl.value) inputEl.value = st.lastDraft;
+          if (attach && !st.pendingAttach) st.pendingAttach = attach;
+          renderAttachChips();
           autosize();
           toast('发送失败：' + ((err && err.message) || '未知错误'), 'error');
         });
@@ -1207,6 +1517,27 @@
           openMsgMenu(m);
           return;
         }
+        // 角色发的图片：点击预览（契约 §4.2）
+        var libImg = K.closest(ev.target, '.msg-image');
+        if (libImg) {
+          if (suppressClick) { suppressClick = false; return; }
+          ev.preventDefault();
+          previewLibraryImage(libImg.getAttribute('data-img'));
+          return;
+        }
+        // 用户发的图片 / 文件
+        if (K.closest(ev.target, '.msg-attach-img')) {
+          if (suppressClick) { suppressClick = false; return; }
+          ev.preventDefault();
+          previewAttachment((m.attachments || [])[0]);
+          return;
+        }
+        if (K.closest(ev.target, '.msg-attach-file')) {
+          if (suppressClick) { suppressClick = false; return; }
+          ev.preventDefault();
+          openFileTextModal((m.attachments || [])[0]);
+          return;
+        }
         if (K.closest(ev.target, '.msg-bubble')) {
           if (suppressClick) { suppressClick = false; return; }
           openMsgMenu(m);
@@ -1272,6 +1603,10 @@
       sendBtn.addEventListener('click', function () {
         if (st.streaming) stopStream(); else send();
       });
+      attachBtn.addEventListener('click', function (ev) {
+        ev.preventDefault();
+        openAttachSheet();
+      });
 
       window.addEventListener('online', onOnline);
       window.addEventListener('offline', onOffline);
@@ -1336,6 +1671,48 @@
         });
       }
 
+      /* 读取上帝模式开关与角色图片库（契约 §4.4 §4.2） */
+      function loadMediaState() {
+        var p = Promise.resolve(false);
+        try {
+          if (App.DB && App.DB.settings && typeof App.DB.settings.get === 'function') {
+            p = App.DB.settings.get('god_mode', false);
+          }
+        } catch (e) { p = Promise.resolve(false); }
+        return Promise.resolve(p).then(function (v) {
+          st.godMode = v === true;
+          return null;
+        }).catch(function (err) {
+          console.error('[chat] 读取上帝模式失败', err);
+          st.godMode = false;
+          return null;
+        }).then(function () {
+          var M = mediaApi();
+          var cid = st.character && st.character.id;
+          if (!M || typeof M.list !== 'function' || !cid) { st.images = []; return null; }
+          var lp;
+          try { lp = M.list(cid); } catch (e) { lp = Promise.resolve([]); }
+          return Promise.resolve(lp).then(function (list) {
+            st.images = Array.isArray(list) ? list : [];
+            return null;
+          }).catch(function (err) {
+            console.error('[chat] 加载角色图片失败', err);
+            st.images = [];
+            return null;
+          });
+        });
+      }
+
+      // 图片库变化后重渲染含图片标记的消息
+      function refreshImageNodes() {
+        st.imgCache = {};
+        st.messages.forEach(function (m) {
+          if (!m || m.role !== 'assistant') return;
+          if (String(m.content || '').indexOf('[[img:') === -1) return;
+          try { replaceMsgEl(m); } catch (e) { /* 忽略 */ }
+        });
+      }
+
       function load() {
         return D.get('sessions', sessionId).then(function (s) {
           if (!s) throw new Error('会话不存在或已被删除');
@@ -1352,6 +1729,8 @@
           if (!st.persona) st.persona = { id: '', name: '我', description: '', avatar: '' };
           if (!st.preset) st.preset = K.defaultPresetFor(st.character && st.character.type);
           return resolveProvider();
+        }).then(function () {
+          return loadMediaState();
         }).then(function () {
           return loadMessages();
         }).then(function () {
@@ -1405,9 +1784,12 @@
           st.preset = arr[2] || (st.preset ? st.preset : K.defaultPresetFor(st.character && st.character.type));
           return resolveProvider();
         }).then(function () {
+          return loadMediaState();
+        }).then(function () {
           if (st.destroyed) return null;
           applyTitle();
           renderTopbar();
+          refreshImageNodes();
           syncGuide();
           return null;
         }).catch(function (err) { console.error('[chat] 重新加载元数据失败', err); });

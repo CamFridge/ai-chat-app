@@ -7,11 +7,11 @@
 | 项 | 值 |
 | --- | --- |
 | 文件 | [`build/AI-Chat-1.0.0.apk`](build/AI-Chat-1.0.0.apk) |
-| 大小 | 257,041 bytes（0.25 MB） |
-| SHA-256 | `F09FDE34899F2EC4ECA7B74BA3F908D971426E885ACC6E6087401B27F42FCC7A` |
+| 大小 | 261,137 bytes（0.25 MB） |
+| SHA-256 | `473DADB01FE2350F9F7F52AC8D82C8576FFBC78756013401875AAC3EE4DE9435` |
 | 包名 / 版本 | `com.aichat.client` / 1.0.0（versionCode 1） |
 | 系统要求 | Android 8.0+（minSdk 26，targetSdk 34） |
-| 签名 | v2 + v3，证书 `CN=AI Chat`，SHA-256 `04CEAB35D9CBFBBBA6C0CDBBA08CEC62E7622B4E316A690C41D8260A7D6E1B03` |
+| 签名 | v2 + v3，证书 `CN=AI Chat`，SHA-256 `F4AAA0A8AC71DCA67AD95F290F106A44C12D694F8477305FB213828AB92D2590` |
 
 ```powershell
 adb install -r build\AI-Chat-1.0.0.apk
@@ -20,6 +20,11 @@ adb install -r build\AI-Chat-1.0.0.apk
 也可以把 APK 传到手机点击安装（允许「安装未知来源应用」）。首次启动会强制进入 6 步「引导 API」向导，测试连接不通过无法进入主界面。
 
 签名密钥库：[`keystore/aichat-release.jks`](keystore/aichat-release.jks)（alias `aichat`，口令 `aichat2026`）。
+
+## 本版更新
+
+- **修复助手/角色回复出现「一串 null」**：Android `org.json` 的 `optString` 在字段值为 JSON `null` 时返回字面量 `"null"`，部分兼容服务会发 `{"delta":{"content":null}}`（推理模型、首包 role-only）。原生层改为 `jstr()` 严格取值（跳过 null/非字符串、忽略 `reasoning_content`），前端三层再防御非字符串增量。
+- **「AI 补全」生成页重做**（角色创建第 4 步 / 世界观补全）：实时流式显示生成内容、真实耗时与「已接收 N 字 / 第 N 次尝试」、可随时「停止生成」且保留已收内容、失败不再从头重来（可继续生成 / 换 API / 手动填写）、按钮精简为最多两个主操作。
 
 ## 功能
 
@@ -33,8 +38,10 @@ adb install -r build\AI-Chat-1.0.0.apk
 
 ## 验证
 
-- 无头 Chrome E2E：`scripts/audit.js`、`scripts/e2e-onboarding.js`(26)、`scripts/e2e-character.js`(20)、`scripts/e2e-chat.js`(16)、`scripts/e2e-guide.js`(14)、`scripts/e2e-acceptance.js`(31) 全部通过。
-- Android 13（API 33）模拟器：`scripts/device-e2e.js` **17/17**（原生桥、主界面、聊天流式、气泡扇面、暗色主题、无 JS 异常），系统返回键行为正确，最终发布包安装启动通过。
+- 无头 Chrome E2E：`scripts/audit.js`、`scripts/e2e-onboarding.js`(26)、`scripts/e2e-character.js`(28)、`scripts/e2e-chat.js`(16)、`scripts/e2e-guide.js`(14)、`scripts/e2e-acceptance.js`(32) 全部通过。
+- 「一串 null」修复单测（桌面 JVM + 真实 `org.json`，从 `Net.java` 原样提取方法）：`scripts/jvm-null/` **13/13 ALL PASS**（null 增量、reasoning_content 忽略、流式拼接不含 "null"）。
+- 设备端验证（本版构建，Android 13 / API 33 模拟器，AEHD 加速）：`scripts/device-e2e.js` **17/17**（原生桥、主界面、聊天流式回复并落库、气泡扇面、暗色主题、无 JS 异常），`scripts/device-null.js` **3/3**（注入 JSON null 增量后正文与气泡均不含 "null"），系统返回键行为正确；截图见 `build/device/`。
+- 「一串 null」修复另有桌面 JVM 单测（`scripts/jvm-null/`，13/13）与前端 E2E null 回归（acceptance 32/32）。
 - 截图：`build/shots/`、`build/shots-extra/`、`build/device/`。
 
 ## 构建

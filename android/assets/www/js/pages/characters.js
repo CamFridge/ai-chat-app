@@ -334,12 +334,18 @@
   function deleteCharacter(ch) {
     return UI.confirm({
       title: '删除角色',
-      message: '确定删除「' + (ch.name || '该角色') + '」吗？\n关联的聊天会话会保留，但会解除与该角色的绑定。',
+      message: '确定删除「' + (ch.name || '该角色') + '」吗？\n关联的聊天会话会保留，但会解除与该角色的绑定；角色的图片库会一并删除。',
       okText: '删除',
       danger: true
     }).then(function (ok) {
       if (!ok) return null;
       return DB.del('characters', ch.id).then(function () {
+        // 角色图片库一并清理（图片只属于该角色）
+        if (App.Media && typeof App.Media.removeByCharacter === 'function') {
+          return App.Media.removeByCharacter(ch.id).catch(function () { return 0; });
+        }
+        return 0;
+      }).then(function () {
         // 只解除绑定，不删会话
         return DB.byIndex('sessions', 'characterId', ch.id).catch(function (e) {
           console.error('[characters] 查询关联会话失败', e);

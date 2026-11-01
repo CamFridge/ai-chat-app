@@ -232,6 +232,11 @@
   }
 
   function pickFileMock(accept) {
+    // 测试钩子：E2E 里设置 window.__AICHAT_MOCK_FILE__ = {name,data} 可跳过系统文件选择框
+    var hook = window.__AICHAT_MOCK_FILE__;
+    if (hook !== undefined) {
+      return Promise.resolve(typeof hook === 'function' ? hook() : (hook || { name: '', data: '' }));
+    }
     return new Promise(function (resolve) {
       var input = document.createElement('input');
       input.type = 'file';
@@ -254,6 +259,11 @@
   }
 
   function pickImageMock() {
+    // 测试钩子：E2E 里设置 window.__AICHAT_MOCK_IMAGE__ = {dataUri,name} 可跳过系统相册
+    var hook = window.__AICHAT_MOCK_IMAGE__;
+    if (hook !== undefined) {
+      return Promise.resolve(typeof hook === 'function' ? hook() : (hook || { dataUri: '', name: '' }));
+    }
     return new Promise(function (resolve) {
       var input = document.createElement('input');
       input.type = 'file';

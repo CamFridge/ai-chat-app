@@ -588,6 +588,10 @@ svg { display: block; }
   transition: opacity .2s;
 }
 .overlay-mask.show { opacity: 1; }
+.modal-wrap.show .overlay-mask { opacity: 1; }
+.modal-wrap.show .modal { transform: scale(1); opacity: 1; }
+.sheet-wrap.show .overlay-mask { opacity: 1; }
+.sheet-wrap.show .sheet { transform: translateY(0); }
 .modal-wrap {
   position: fixed;
   inset: 0;
