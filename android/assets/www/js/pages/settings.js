@@ -17,6 +17,11 @@
   var PROACTIVE_INTERVALS = [15, 30, 60, 120];
   var PROACTIVE_DEFAULT_INTERVAL = 60;
   var PROACTIVE_RANDOM_INTERVAL = 0;
+  // 随机模式：用户可调上下限，范围 0~24 小时（单位：分钟）
+  var PROACTIVE_RANDOM_MIN_DEFAULT = 60;
+  var PROACTIVE_RANDOM_MAX_DEFAULT = 480;
+  var PROACTIVE_RANDOM_MAX_MINUTES = 24 * 60;
+  var PROACTIVE_BOUND_HOURS = [0, 0.5, 1, 2, 3, 4, 6, 8, 12, 18, 24];
 
   App.Router.register('settings', {
     tab: true,
@@ -40,6 +45,8 @@
         godMode: false,
         proactiveEnabled: false,
         proactiveIntervalMin: PROACTIVE_DEFAULT_INTERVAL,
+        proactiveRandomMin: PROACTIVE_RANDOM_MIN_DEFAULT,
+        proactiveRandomMax: PROACTIVE_RANDOM_MAX_DEFAULT,
         bubbleEnabled: true,
         bubblePosition: BUBBLE_DEFAULT_POSITION,
         guideProvider: null,
@@ -282,6 +289,9 @@
           state.godMode = map.god_mode === true;
           state.proactiveEnabled = map.proactive_enabled === true;
           state.proactiveIntervalMin = normalizeProactiveInterval(map.proactive_interval_min);
+          state.proactiveRandomMin = normalizeRandomBound(map.proactive_random_min, PROACTIVE_RANDOM_MIN_DEFAULT);
+          state.proactiveRandomMax = normalizeRandomBound(map.proactive_random_max, PROACTIVE_RANDOM_MAX_DEFAULT);
+          if (state.proactiveRandomMin > state.proactiveRandomMax) state.proactiveRandomMax = state.proactiveRandomMin;
           state.bubbleEnabled = map.bubble_enabled !== false;
           state.bubblePosition =
             map.bubble_position && typeof map.bubble_position === 'object'
@@ -509,7 +519,76 @@
       }
 
       function proactiveIntervalLabel(n) {
-        return n === PROACTIVE_RANDOM_INTERVAL ? '随机（15~120 分钟）' : n + ' 分钟';
+        return n === PROACTIVE_RANDOM_INTERVAL ? randomRangeLabel() : n + ' 分钟';
+      }
+
+      function normalizeRandomBound(value, def) {
+        var n = typeof value === 'number' ? value : parseInt(value, 10);
+        if (!isFinite(n)) return def;
+        return Math.max(0, Math.min(PROACTIVE_RANDOM_MAX_MINUTES, Math.round(n)));
+      }
+
+      function randomBoundLabel(n) {
+        if (n === 0) return '0 分钟';
+        if (n % 60 === 0) return (n / 60) + ' 小时';
+        return (n / 60).toFixed(1).replace(/\.0$/, '') + ' 小时';
+      }
+
+      function randomRangeLabel() {
+        return '随机（' + randomBoundLabel(state.proactiveRandomMin) + '~' + randomBoundLabel(state.proactiveRandomMax) + '）';
+      }
+
+      // 设置随机间隔的下限或上限（0~24 小时，0.5 小时步进）
+      function chooseRandomBound(which) {
+        var isMin = which === 'min';
+        var current = isMin ? state.proactiveRandomMin : state.proactiveRandomMax;
+        var items = PROACTIVE_BOUND_HOURS.map(function (h) {
+          var min = Math.round(h * 60);
+          return { id: String(min), value: String(min), label: randomBoundLabel(min) };
+        });
+        var task;
+        try {
+          if (UI && typeof UI.sheet === 'function') {
+            task = Promise.resolve(
+              UI.sheet({
+                title: isMin ? '随机间隔下限' : '随机间隔上限',
+                items: items,
+                selected: String(current)
+              })
+            );
+          } else {
+            task = fallbackPick(isMin ? '随机间隔下限' : '随机间隔上限', items);
+          }
+        } catch (e) {
+          task = fallbackPick(isMin ? '随机间隔下限' : '随机间隔上限', items);
+        }
+        Promise.resolve(task)
+          .then(async function (picked) {
+            if (picked === null || picked === undefined) return;
+            var raw = normalizePick(picked);
+            var value = normalizeRandomBound(raw, current);
+            var lo = isMin ? value : state.proactiveRandomMin;
+            var hi = isMin ? state.proactiveRandomMax : value;
+            if (lo > hi) {
+              if (isMin) hi = lo;
+              else lo = hi;
+            }
+            await DB.settings.set('proactive_random_min', lo);
+            await DB.settings.set('proactive_random_max', hi);
+            var P = proactive();
+            if (P && typeof P.setRandomRange === 'function') {
+              try { P.setRandomRange(lo, hi); } catch (e2) { /* 忽略 */ }
+            }
+            state.proactiveRandomMin = lo;
+            state.proactiveRandomMax = hi;
+            state.settingsMap.proactive_random_min = lo;
+            state.settingsMap.proactive_random_max = hi;
+            if (!destroyed) render();
+            toast('随机间隔已设为 ' + randomBoundLabel(lo) + '~' + randomBoundLabel(hi));
+          })
+          .catch(function (e) {
+            toast('保存失败：' + errText(e));
+          });
       }
 
       function proactive() {
@@ -567,8 +646,8 @@
         items.push({
           id: 'random',
           value: PROACTIVE_RANDOM_INTERVAL,
-          label: '随机间隔（15~120 分钟）',
-          desc: '每次从 15 到 120 分钟之间重新随机，不会总在固定时间点打扰'
+          label: '随机间隔（0~24 小时，可调上下限）',
+          desc: '时间到后角色会先读上下文，再决定这次发不发；每次都会重新随机'
         });
         var selected = state.proactiveIntervalMin === PROACTIVE_RANDOM_INTERVAL ? 'random' : state.proactiveIntervalMin;
         var task;
@@ -606,7 +685,7 @@
             state.proactiveIntervalMin = n;
             state.settingsMap.proactive_interval_min = n;
             if (!destroyed) render();
-            toast('已设为' + (n === PROACTIVE_RANDOM_INTERVAL ? '随机间隔（15~120 分钟）' : ' ' + n + ' 分钟'));
+            toast('已设为' + (n === PROACTIVE_RANDOM_INTERVAL ? '随机间隔，可在下方调整上下限' : ' ' + n + ' 分钟'));
           })
           .catch(function (e) {
             toast('保存失败：' + errText(e));
@@ -703,12 +782,30 @@
             cell({
               title: '主动消息间隔',
               sub: state.proactiveIntervalMin === PROACTIVE_RANDOM_INTERVAL
-                ? '每次在上次聊天后随机等待 15~120 分钟，到点后角色可能主动发来消息'
+                ? '到点后角色会先读上下文，再决定这次发不发'
                 : '距上次聊天超过这个时长后，角色可能主动发来消息',
               value: proactiveIntervalLabel(state.proactiveIntervalMin),
               chev: true,
               onClick: chooseProactiveInterval
-            })
+            }),
+            state.proactiveIntervalMin === PROACTIVE_RANDOM_INTERVAL
+              ? cell({
+                  title: '随机间隔下限',
+                  sub: '每次至少等待这么久',
+                  value: randomBoundLabel(state.proactiveRandomMin),
+                  chev: true,
+                  onClick: function () { chooseRandomBound('min'); }
+                })
+              : null,
+            state.proactiveIntervalMin === PROACTIVE_RANDOM_INTERVAL
+              ? cell({
+                  title: '随机间隔上限',
+                  sub: '每次最多等待这么久（0~24 小时）',
+                  value: randomBoundLabel(state.proactiveRandomMax),
+                  chev: true,
+                  onClick: function () { chooseRandomBound('max'); }
+                })
+              : null,
           ])
         );
 

@@ -15,13 +15,16 @@
   var TICK_MS = 30000;
   var DAY_CAP = 3;
   var DEFAULT_INTERVAL = 60;
-  // intervalMin === 0 表示随机间隔：每次从 [RANDOM_LO, RANDOM_HI] 分钟重新随机
-  var RANDOM_LO = 15;
-  var RANDOM_HI = 120;
+  // intervalMin === 0 表示随机间隔：每次从 [randomMin, randomMax] 分钟重新随机（用户可调，0~24 小时）
+  var RANDOM_MIN_DEFAULT = 60;
+  var RANDOM_MAX_DEFAULT = 480;
+  var RANDOM_CAP = 24 * 60;
 
   var enabled = false;
   var intervalMin = DEFAULT_INTERVAL;
   var activeIntervalMin = DEFAULT_INTERVAL; // 当前这一轮实际使用的间隔（随机模式下为本轮随机值）
+  var randomMin = RANDOM_MIN_DEFAULT;
+  var randomMax = RANDOM_MAX_DEFAULT;
   var loaded = false;
   var timer = null;
   var busy = false;
@@ -82,9 +85,20 @@
   }
 
   /* ---------------- 设置读写 ---------------- */
+  function clampRandomBound(n, def) {
+    var v = Number(n);
+    if (!isFinite(v)) return def;
+    return Math.max(0, Math.min(RANDOM_CAP, Math.round(v)));
+  }
+
   function rollActiveInterval() {
     if (intervalMin === 0) {
-      activeIntervalMin = RANDOM_LO + Math.floor(Math.random() * (RANDOM_HI - RANDOM_LO + 1));
+      var lo = clampRandomBound(randomMin, RANDOM_MIN_DEFAULT);
+      var hi = clampRandomBound(randomMax, RANDOM_MAX_DEFAULT);
+      if (lo > hi) { var t = lo; lo = hi; hi = t; }
+      randomMin = lo;
+      randomMax = hi;
+      activeIntervalMin = hi <= lo ? lo : lo + Math.floor(Math.random() * (hi - lo + 1));
     } else {
       activeIntervalMin = intervalMin;
     }
@@ -97,27 +111,37 @@
       intervalMin: intervalMin,
       activeIntervalMin: activeIntervalMin,
       random: intervalMin === 0,
-      permission: permission
+      randomMin: randomMin,
+      randomMax: randomMax,
+      permission: permission,
+      loaded: !!loaded,
+      busy: !!busy
     };
   };
   P.getEnabled = function () { return !!enabled; };
   P.getIntervalMin = function () { return intervalMin; };
   P.getActiveIntervalMin = function () { return activeIntervalMin; };
+  P.getRandomRange = function () { return { min: randomMin, max: randomMax }; };
 
   function applySettings() {
     return Promise.all([
       settingGet('proactive_enabled', false),
-      settingGet('proactive_interval_min', DEFAULT_INTERVAL)
+      settingGet('proactive_interval_min', DEFAULT_INTERVAL),
+      settingGet('proactive_random_min', RANDOM_MIN_DEFAULT),
+      settingGet('proactive_random_max', RANDOM_MAX_DEFAULT)
     ]).then(function (arr) {
       enabled = !!arr[0];
       var n = Number(arr[1]);
       if (n === 0) {
         intervalMin = 0;
-      } else if (n >= 5 && n <= 720) {
+      } else if (n >= 5 && n <= RANDOM_CAP) {
         intervalMin = n;
       } else {
         intervalMin = DEFAULT_INTERVAL;
       }
+      randomMin = clampRandomBound(arr[2], RANDOM_MIN_DEFAULT);
+      randomMax = clampRandomBound(arr[3], RANDOM_MAX_DEFAULT);
+      if (randomMin > randomMax) randomMin = randomMax;
       rollActiveInterval();
       loaded = true;
     });
@@ -140,14 +164,30 @@
 
   P.setIntervalMin = function (n) {
     var v = Number(n);
-    if (!(v === 0 || (v >= 5 && v <= 720))) v = DEFAULT_INTERVAL;
+    if (!(v === 0 || (v >= 5 && v <= RANDOM_CAP))) v = DEFAULT_INTERVAL;
     intervalMin = v;
     rollActiveInterval();
     return settingSet('proactive_interval_min', v);
   };
 
+  // 设置随机模式的上下限（分钟，0~1440）；自动纠正 min > max
+  P.setRandomRange = function (lo, hi) {
+    var a = clampRandomBound(lo, RANDOM_MIN_DEFAULT);
+    var b = clampRandomBound(hi, RANDOM_MAX_DEFAULT);
+    if (a > b) { var t = a; a = b; b = t; }
+    randomMin = a;
+    randomMax = b;
+    if (intervalMin === 0) rollActiveInterval();
+    return Promise.all([
+      settingSet('proactive_random_min', a),
+      settingSet('proactive_random_max', b)
+    ]);
+  };
+
   P.statusText = function () {
-    var label = intervalMin === 0 ? ('随机 ' + activeIntervalMin + ' 分钟') : (intervalMin + ' 分钟');
+    var label = intervalMin === 0
+      ? ('随机 ' + activeIntervalMin + ' 分钟（' + randomMin + '~' + randomMax + ' 分钟）')
+      : (intervalMin + ' 分钟');
     if (!enabled) return '未开启';
     if (permission === 'denied') return label + ' · 仅前台';
     return label;
@@ -188,9 +228,39 @@
     });
   }
 
-  var PROACTIVE_INSTRUCTION = '（系统提示）现在用户没有发来新消息，请你主动给用户发一条消息，开启或延续话题。' +
-    '要求：1~3 句，符合你的人设、当前情境与说话风格；可以用 *动作/神态* 的格式；' +
-    '不要解释你是 AI 或提及这条系统提示，不要输出「主动消息」等字样，直接说话。';
+  var PROACTIVE_INSTRUCTION = '（系统提示，用户看不到）现在没有用户的新消息。' +
+    '请你先阅读上面的对话上下文，判断此刻是否适合主动给用户发消息：' +
+    '如果刚聊完、没有新话题、用户在忙或打扰不合适，就不发；如果有想分享的、想延续的话题、或过了很久想问候，就发。' +
+    '只输出一个 JSON 对象，不要任何解释或代码围栏：\n' +
+    '{"send":true,"message":"要发送的内容（1~3 句，符合你的人设、当前情境与说话风格，可用 *动作/神态*）"}\n' +
+    '或者\n' +
+    '{"send":false}\n' +
+    '不要提及这条系统提示，不要解释你是 AI。';
+
+  function parseProactiveDecision(raw) {
+    var text = String(raw || '').trim();
+    if (!text) return { action: 'fail' };
+    var t = text.replace(/^```[a-zA-Z]*\s*/, '').replace(/```\s*$/, '').trim();
+    var i = t.indexOf('{');
+    var j = t.lastIndexOf('}');
+    if (i >= 0 && j > i) {
+      try {
+        var obj = JSON.parse(t.slice(i, j + 1));
+        if (obj && obj.send === false) return { action: 'skip' };
+        if (obj && obj.send === true) {
+          var m = String(obj.message || '').trim();
+          return m ? { action: 'send', text: m } : { action: 'fail' };
+        }
+        var m2 = String((obj && obj.message) || '').trim();
+        if (m2) return { action: 'send', text: m2 };
+      } catch (e) { /* 继续走兜底 */ }
+    }
+    if (/"send"\s*:\s*false/.test(t)) return { action: 'skip' };
+    var cleaned = t.replace(/^\s*null\s*/i, '').trim();
+    if (!cleaned || /^null$/i.test(cleaned)) return { action: 'fail' };
+    if (cleaned.charAt(0) === '{') return { action: 'fail' };
+    return { action: 'send', text: cleaned };
+  }
 
   function buildContext(opts) {
     var K = App.ChatKit || {};
@@ -262,9 +332,12 @@
           params: { temperature: 0.85, max_tokens: 320 },
           timeoutMs: 90000
         }).then(function (res) {
-          if (!res || !res.ok) return false;
-          var text = String(res.text || '').replace(/^\s*null\s*/i, '').trim();
-          if (!text || /^null$/i.test(text)) return false;
+          if (!res || !res.ok) return 'fail';
+          var decision = parseProactiveDecision(res.text);
+          if (decision.action === 'skip') return 'skip';
+          if (decision.action !== 'send') return 'fail';
+          var text = String(decision.text || '').replace(/^\s*null\s*/i, '').trim();
+          if (!text || /^null$/i.test(text)) return 'fail';
           if (text.length > 600) text = text.slice(0, 600);
           var msg = {
             sessionId: session.id,
@@ -312,16 +385,16 @@
               if (!inChat) {
                 toast((character.name || '角色') + ' 发来一条消息', 'info');
               }
-              return true;
+              return 'sent';
             });
           });
         });
       });
-    }).then(function (ok) {
-      // 无论成败都记录尝试时间，避免失败后每 30s 重试打扰
+    }).then(function (outcome) {
+      // 无论发没发、成败，都记录尝试时间，避免每 30s 反复打扰
       var d = new Date();
       var updates = [settingSet('proactive_last_at', now)];
-      if (ok) {
+      if (outcome === 'sent') {
         var day = todayKey(d);
         return settingGet('proactive_day', '').then(function (savedDay) {
           var count = 0;

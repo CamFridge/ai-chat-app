@@ -216,7 +216,7 @@
               return;
             }
             case 'app.info':
-              resolve({ version: '1.0.0-demo', platform: 'web', apiLevel: 0 });
+              resolve({ version: '1.2.1-demo', platform: 'web', apiLevel: 0 });
               return;
             case 'app.setBackGuard':
               resolve({ ok: true });

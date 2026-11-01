@@ -417,6 +417,76 @@
     setTimeout(function () { if (el && el.classList) el.classList.remove(cls); }, ms || 1600);
   }
 
+  /* ---------------- 光标指引（直接标出目标） ---------------- */
+  var pointerEl = null;
+  var pointerTarget = null;
+  var pointerTimer = null;
+
+  function pointerLayer() {
+    if (pointerEl && pointerEl.parentNode) return pointerEl;
+    var ui = UI();
+    if (!ui) return null;
+    var layer = document.getElementById('overlay-root') || document.body;
+    pointerEl = ui.el('div', {
+      class: 'guide-pointer',
+      html: '<svg viewBox="0 0 24 24" width="34" height="34" aria-hidden="true">' +
+        '<path d="M4 2.5 L20.2 11.2 L12.6 13.1 L9.3 21.4 Z" fill="#111" stroke="#fff" stroke-width="1.4" stroke-linejoin="round"/></svg>' +
+        '<div class="guide-pointer-label"></div>'
+    });
+    layer.appendChild(pointerEl);
+    if (!pointerEl.__bound) {
+      pointerEl.__bound = true;
+      document.addEventListener('click', function (ev) {
+        if (!pointerEl) return;
+        if (ev.target && (ev.target.closest && ev.target.closest('.guide-pointer, .bubble-panel, .guide-steps'))) return;
+        G.clearPointer();
+      }, true);
+    }
+    return pointerEl;
+  }
+
+  G.clearPointer = function () {
+    if (pointerTimer) { clearTimeout(pointerTimer); pointerTimer = null; }
+    if (pointerTarget && pointerTarget.classList) pointerTarget.classList.remove('guide-cursor-target');
+    pointerTarget = null;
+    if (pointerEl && pointerEl.parentNode) pointerEl.parentNode.removeChild(pointerEl);
+    pointerEl = null;
+  };
+
+  G.pointAt = function (el, label) {
+    if (!el || !el.getBoundingClientRect) return false;
+    var node = pointerLayer();
+    if (!node) return false;
+    if (pointerTimer) { clearTimeout(pointerTimer); pointerTimer = null; }
+    if (pointerTarget && pointerTarget !== el && pointerTarget.classList) pointerTarget.classList.remove('guide-cursor-target');
+    pointerTarget = el;
+    el.classList.add('guide-cursor-target');
+    var r = el.getBoundingClientRect();
+    var vw = window.innerWidth || 390;
+    var vh = window.innerHeight || 844;
+    // 光标放在目标右下角，并保证不超出屏幕（标签宽约 150px）
+    var px = Math.min(Math.max(10, r.right - 34), Math.max(10, vw - 200));
+    var py = Math.min(Math.max(64, r.bottom - 4), Math.max(64, vh - 96));
+    node.style.left = Math.round(px) + 'px';
+    node.style.top = Math.round(py) + 'px';
+    node.classList.remove('flip');
+    var lbl = node.querySelector('.guide-pointer-label');
+    if (lbl) {
+      lbl.textContent = String(label || '在这里');
+      lbl.classList.remove('flip');
+      lbl.style.maxWidth = Math.max(90, Math.min(180, vw - px - 12)) + 'px';
+    }
+    node.classList.add('show');
+    node.style.animation = 'none';
+    void node.offsetWidth;
+    node.style.animation = '';
+    pointerTimer = setTimeout(function () {
+      if (node) node.classList.remove('show');
+    }, 12000);
+    return true;
+  };
+
+
   // '/chat/abc123' → { kind:'page', name:'chat', params:{id:'abc123'} }
   function resolveRoute(target) {
     var t = String(target || '').trim();
@@ -470,8 +540,17 @@
             if (UI()) UI().toast('跳转失败：' + (e && e.message ? e.message : e), 'error');
           }
         };
-        if (App.Help && typeof App.Help.isOpen === 'function' && App.Help.isOpen()) setTimeout(go, 200);
-        else go();
+        var afterNav = function () {
+          if (route.kind !== 'tab') return;
+          setTimeout(function () {
+            try {
+              var tabBtn = document.querySelector('.tab[data-tab="' + route.name + '"]');
+              if (tabBtn) G.pointAt(tabBtn, '已到「' + (G.pageLabel(route.name) || route.name) + '」');
+            } catch (e) { /* 忽略 */ }
+          }, 380);
+        };
+        if (App.Help && typeof App.Help.isOpen === 'function' && App.Help.isOpen()) setTimeout(function () { go(); afterNav(); }, 200);
+        else { go(); afterNav(); }
         return { ok: true, message: '正在打开' };
       }
 
@@ -486,7 +565,8 @@
         } catch (e) { try { el.scrollIntoView(); } catch (e2) {} }
         if (typeof el.focus === 'function') { try { el.focus({ preventScroll: true }); } catch (e) { try { el.focus(); } catch (e2) {} } }
         flash(el, 'guide-focus-flash', 1600);
-        return { ok: true, message: '已定位到该字段' };
+        G.pointAt(el, '在这里填写');
+        return { ok: true, message: '已用光标标出该字段' };
       }
 
       if (type === 'tap') {
@@ -499,8 +579,9 @@
           if (typeof node.scrollIntoView === 'function') node.scrollIntoView({ block: 'center', behavior: 'smooth' });
         } catch (e) {}
         flash(node, 'guide-highlight', 1800);
-        if (UI()) UI().toast('已高亮，请点一下闪烁的位置');
-        return { ok: true, message: '已高亮目标' };
+        G.pointAt(node, '点这里');
+        if (UI()) UI().toast('已用光标标出，点一下高亮的位置');
+        return { ok: true, message: '已用光标标出目标' };
       }
 
       return { ok: false, message: '不支持的动作类型：' + type };
@@ -546,6 +627,34 @@
       row.appendChild(ui.el('span', { class: 'guide-step-chev', html: hasAction ? ui.icon('chev', 16) : '' }));
       wrap.appendChild(row);
     });
+    // 直接高亮：面板打开时自动用光标标出第一个可执行目标（focus/tap），无需再点一次
+    var first = null;
+    list.some(function (step, i) {
+      if (step && step.action && (String(step.action.type).toLowerCase() === 'focus' || String(step.action.type).toLowerCase() === 'tap')) {
+        first = i; return true;
+      }
+      return false;
+    });
+    if (first !== null) {
+      var openPage = (App.Router && App.Router.current ? (App.Router.current() || {}).name : '') || '';
+      setTimeout(function () {
+        try {
+          // 面板已关闭、已切换页面、或用户已经点了别的步骤，就不再自动高亮
+          if (!wrap.isConnected) return;
+          var curPage = (App.Router && App.Router.current ? (App.Router.current() || {}).name : '') || '';
+          if (curPage !== openPage) return;
+          var rows = wrap.querySelectorAll('.guide-step');
+          var row = rows[first];
+          if (!row) return;
+          row.classList.add('active');
+          var r = G.handleAction(list[first].action);
+          if (r && r.ok) {
+            row.classList.add('done');
+            setTimeout(function () { row.classList.remove('done'); }, 900);
+          }
+        } catch (e) { /* 忽略自动高亮失败 */ }
+      }, 120);
+    }
     return wrap;
   };
 
