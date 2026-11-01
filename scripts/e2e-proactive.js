@@ -235,6 +235,81 @@ async function waitFor(page, expr, timeoutMs = 10000, intervalMs = 120) {
     else bad('设置页开关写入异常：' + switchOk);
   } else bad('设置页开关测试返回异常：' + switchOk);
 
+  // ---------- 8. 随机间隔 ----------
+  await page.eval(`(async () => {
+    await App.Router.tab('settings');
+    await new Promise(r => setTimeout(r, 700));
+    const cells = Array.from(document.querySelectorAll('.cell'));
+    const row = cells.find(c => (c.textContent || '').indexOf('主动消息间隔') >= 0);
+    if (row) row.click();
+    return true;
+  })()`);
+  await sleep(700);
+  const sheetText = await page.eval(`JSON.stringify(Array.from(document.querySelectorAll('.sheet-item')).map(e => (e.textContent || '').trim()))`);
+  let labels = [];
+  try { labels = JSON.parse(sheetText); } catch (e) { labels = []; }
+  if (labels.some((l) => l.indexOf('随机间隔') >= 0)) ok('间隔选项含「随机间隔（15~120 分钟）」');
+  else bad('间隔选项缺少随机项：' + sheetText);
+
+  await page.eval(`(() => {
+    const items = Array.from(document.querySelectorAll('.sheet-item'));
+    const it = items.find(e => (e.textContent || '').indexOf('随机间隔') >= 0);
+    if (it) it.click();
+    return true;
+  })()`);
+  await sleep(900);
+  let rand = null;
+  try {
+    rand = JSON.parse(await page.eval(`(async () => {
+      const val = await App.DB.settings.get('proactive_interval_min', null);
+      const st = App.Proactive.status();
+      return JSON.stringify({ val: val, intervalMin: st.intervalMin, random: st.random, active: st.activeIntervalMin, text: App.Proactive.statusText() });
+    })()`));
+  } catch (e) { rand = null; }
+  if (rand && rand.val === 0 && rand.random === true && rand.intervalMin === 0) ok('随机模式已写入（proactive_interval_min=0）');
+  else bad('随机模式写入异常：' + JSON.stringify(rand));
+  if (rand && rand.active >= 15 && rand.active <= 120) ok('本轮随机间隔在 15~120 分钟之间：' + rand.active + ' 分钟');
+  else bad('随机间隔超出范围：' + (rand && rand.active));
+  if (rand && /随机/.test(rand.text)) ok('状态文案显示随机：' + rand.text);
+  else bad('状态文案未显示随机：' + (rand && rand.text));
+
+  const rolls = await page.eval(`(async () => {
+    const out = [];
+    for (let i = 0; i < 12; i++) { await App.Proactive.setIntervalMin(0); out.push(App.Proactive.getActiveIntervalMin()); }
+    return JSON.stringify(out);
+  })()`);
+  let rollArr = [];
+  try { rollArr = JSON.parse(rolls); } catch (e) { rollArr = []; }
+  const inRange = rollArr.length >= 10 && rollArr.every((n) => Number(n) >= 15 && Number(n) <= 120);
+  const distinct = new Set(rollArr.map((n) => Number(n))).size;
+  if (inRange) ok('连续抽取 12 次均落在 15~120 分钟');
+  else bad('随机抽取越界：' + rolls);
+  if (distinct >= 2) ok('随机间隔不是固定值（12 次抽取得到 ' + distinct + ' 个不同值）');
+  else bad('随机间隔看起来是固定值：' + rolls);
+
+  // 随机模式下后台通知排期也使用本轮随机值
+  await page.eval(`(async () => { await App.Proactive.setIntervalMin(0); window.__AICHAT_NOTIFY_CALLS__ = []; return true; })()`);
+  const activeBeforeBG = Number(await page.eval(`App.Proactive.getActiveIntervalMin()`));
+  await page.eval(`(() => { try { Object.defineProperty(document, 'hidden', { configurable: true, get: () => true }); } catch (e) {} document.dispatchEvent(new Event('visibilitychange')); return 'ok'; })()`);
+  await sleep(800);
+  const bgDelay = Number(await page.eval(`(() => { const c = (window.__AICHAT_NOTIFY_CALLS__ || []).filter(x => x.method === 'notify.schedule').pop(); return c && c.args ? Number(c.args.delayMs) : 0; })()`));
+  if (bgDelay >= 15 * 60000 && bgDelay <= 120 * 60000) ok('随机模式下后台排期落在 15~120 分钟（' + Math.round(bgDelay / 60000) + ' 分钟）');
+  else bad('随机模式后台排期异常：' + bgDelay);
+  if (Math.round(bgDelay / 60000) === activeBeforeBG) ok('排期使用本轮随机值（' + activeBeforeBG + ' 分钟）');
+  else bad('排期未使用本轮随机值：active=' + activeBeforeBG + ' delay=' + Math.round(bgDelay / 60000));
+  await page.eval(`(() => { try { Object.defineProperty(document, 'hidden', { configurable: true, get: () => false }); } catch (e) {} document.dispatchEvent(new Event('visibilitychange')); return 'ok'; })()`);
+  await sleep(500);
+
+  await page.eval(`(async () => {
+    const row = Array.from(document.querySelectorAll('.cell')).find(c => (c.textContent || '').indexOf('主动消息间隔') >= 0);
+    if (row && row.scrollIntoView) row.scrollIntoView({ block: 'center' });
+    return true;
+  })()`);
+  await sleep(500);
+  await page.screenshot(path.join(SHOTS, '97-settings-proactive-random.png'));
+
+  await page.eval(`(async () => { await App.Proactive.setIntervalMin(60); return true; })()`);
+
   console.log('\n========== 主动消息 E2E 结果 ==========');
   if (problems.length) {
     console.log('失败 ' + problems.length + ' 项：');
