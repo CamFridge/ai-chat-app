@@ -72,6 +72,34 @@ public class Bridge {
                 deliverOk(id);
                 return;
 
+            /* ---- 主动消息本地通知（v1.2.0） ---- */
+            case "notify.schedule": {
+                NotificationHelper.schedule(activity, args.optLong("delayMs", 60L * 60L * 1000L),
+                        args.optString("title", "AI 聊天"), args.optString("body", ""));
+                deliverOk(id);
+                return;
+            }
+            case "notify.cancel":
+                NotificationHelper.cancel(activity);
+                deliverOk(id);
+                return;
+            case "notify.status": {
+                JSONObject out = new JSONObject();
+                try {
+                    out.put("permission", NotificationHelper.permission(activity));
+                    out.put("supported", android.os.Build.VERSION.SDK_INT >= 26);
+                } catch (Exception e) {
+                    deliverError(id, "unknown", "读取通知状态失败");
+                    return;
+                }
+                deliver(id, true, out);
+                return;
+            }
+            case "notify.requestPermission":
+                activity.requestNotificationPermission();
+                deliverOk(id);
+                return;
+
             /* ---- 安全存储 ---- */
             case "secure.set":
                 deliver(id, true, SecureStore.set(activity, args.optString("key", ""), args.optString("value", "")));

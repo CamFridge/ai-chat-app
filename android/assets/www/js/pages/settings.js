@@ -13,6 +13,9 @@
 
   var THEME_LABELS = { light: '浅色', dark: '深色', amoled: 'AMOLED' };
   var BUBBLE_DEFAULT_POSITION = { edge: 'right', y: 0.62 };
+  // v1.2.0 角色主动消息：可选间隔（分钟），默认 60
+  var PROACTIVE_INTERVALS = [15, 30, 60, 120];
+  var PROACTIVE_DEFAULT_INTERVAL = 60;
 
   App.Router.register('settings', {
     tab: true,
@@ -34,6 +37,8 @@
         version: '',
         theme: 'light',
         godMode: false,
+        proactiveEnabled: false,
+        proactiveIntervalMin: PROACTIVE_DEFAULT_INTERVAL,
         bubbleEnabled: true,
         bubblePosition: BUBBLE_DEFAULT_POSITION,
         guideProvider: null,
@@ -274,6 +279,8 @@
           var map = state.settingsMap;
           state.theme = map.theme || (UI && typeof UI.theme === 'function' ? UI.theme() : 'light') || 'light';
           state.godMode = map.god_mode === true;
+          state.proactiveEnabled = map.proactive_enabled === true;
+          state.proactiveIntervalMin = normalizeProactiveInterval(map.proactive_interval_min);
           state.bubbleEnabled = map.bubble_enabled !== false;
           state.bubblePosition =
             map.bubble_position && typeof map.bubble_position === 'object'
@@ -490,6 +497,107 @@
         }
       }
 
+      // ---------- 角色主动消息（v1.2.0） ----------
+      // 只接受 15/30/60/120；非法值回退到默认 60
+      function normalizeProactiveInterval(value) {
+        var n = typeof value === 'number' ? value : parseInt(value, 10);
+        if (!isFinite(n) || PROACTIVE_INTERVALS.indexOf(n) < 0) return PROACTIVE_DEFAULT_INTERVAL;
+        return n;
+      }
+
+      function proactive() {
+        return App.Proactive || null;
+      }
+
+      // 开关：App.Proactive 存在时交给它处理权限与调度，否则直接写 settings
+      async function onProactiveToggle(checked) {
+        var next = !!checked;
+        var P = proactive();
+        try {
+          if (P && typeof P.setEnabled === 'function') {
+            await P.setEnabled(next);
+          } else {
+            await DB.settings.set('proactive_enabled', next);
+          }
+          // 兜底确保 DB 与 UI 状态一致（setEnabled 内部也会写，重复写同值无害）
+          try {
+            await DB.settings.set('proactive_enabled', next);
+          } catch (e0) {
+            /* 忽略兜底写失败，以 setEnabled 结果为准 */
+          }
+          state.proactiveEnabled = next;
+          state.settingsMap.proactive_enabled = next;
+          if (!next) {
+            toast('已关闭角色主动消息');
+            return;
+          }
+          // 通知权限：不阻止开启，仅提示前台生效
+          var permission = '';
+          try {
+            if (P && typeof P.status === 'function') {
+              var st = await P.status();
+              permission = (st && st.permission) || '';
+            }
+          } catch (e1) {
+            permission = '';
+          }
+          if (permission === 'denied') {
+            toast('已开启；通知权限未授予，仅 App 打开时生效');
+          } else {
+            toast('已开启角色主动消息');
+          }
+        } catch (e) {
+          // 失败回滚开关视觉状态（state 未改，重新渲染即可恢复）
+          if (!destroyed) render();
+          toast(next ? '开启失败，请重试' : '关闭失败，请重试');
+        }
+      }
+
+      function chooseProactiveInterval() {
+        var items = PROACTIVE_INTERVALS.map(function (n) {
+          return { id: n, value: n, label: n + ' 分钟' };
+        });
+        var task;
+        try {
+          if (UI && typeof UI.sheet === 'function') {
+            task = Promise.resolve(
+              UI.sheet({
+                title: '主动消息间隔',
+                items: items,
+                selected: state.proactiveIntervalMin
+              })
+            );
+          } else {
+            task = fallbackPick('主动消息间隔', items);
+          }
+        } catch (e) {
+          task = fallbackPick('主动消息间隔', items);
+        }
+        Promise.resolve(task)
+          .then(async function (picked) {
+            if (picked === null || picked === undefined) return;
+            var n = normalizeProactiveInterval(normalizePick(picked));
+            if (PROACTIVE_INTERVALS.indexOf(n) < 0) return;
+            await DB.settings.set('proactive_interval_min', n);
+            // 同步给前端轮询器（存在时）；它内部可能也会写一次 DB
+            var P = proactive();
+            if (P && typeof P.setIntervalMin === 'function') {
+              try {
+                P.setIntervalMin(n);
+              } catch (e2) {
+                /* 忽略 */
+              }
+            }
+            state.proactiveIntervalMin = n;
+            state.settingsMap.proactive_interval_min = n;
+            if (!destroyed) render();
+            toast('已设为 ' + n + ' 分钟');
+          })
+          .catch(function (e) {
+            toast('保存失败：' + errText(e));
+          });
+      }
+
       function render() {
         if (destroyed) return;
         wrap.textContent = '';
@@ -563,6 +671,26 @@
               chev: true,
               dataset: { guideFocus: 'mediaHelp' },
               onClick: openMediaHelp
+            })
+          ])
+        );
+
+        // 角色主动消息（v1.2.0）：开关 + 间隔选择
+        wrap.appendChild(
+          group('角色主动消息', [
+            switchCell({
+              title: '允许角色主动发消息',
+              sub: '空闲时角色可能主动找你聊天；锁屏/后台会以通知提醒（每天最多 3 条）',
+              checked: state.proactiveEnabled,
+              dataset: { guideFocus: 'proactive' },
+              onChange: onProactiveToggle
+            }),
+            cell({
+              title: '主动消息间隔',
+              sub: '距上次聊天超过这个时长后，角色可能主动发来消息',
+              value: state.proactiveIntervalMin + ' 分钟',
+              chev: true,
+              onClick: chooseProactiveInterval
             })
           ])
         );

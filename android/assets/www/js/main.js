@@ -161,6 +161,12 @@
         App.info = info || {};
       }).catch(function () {});
     }
+    // 角色主动消息（v1.2.0）：读取开关、前台轮询、后台通知排期
+    if (App.Proactive && typeof App.Proactive.init === 'function') {
+      try {
+        App.Proactive.init().catch(function (e) { console.error('[main] 主动消息初始化失败', e); });
+      } catch (e) { console.error('[main] 主动消息初始化失败', e); }
+    }
   }
 
   function renderFatal(err) {

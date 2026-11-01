@@ -6,7 +6,7 @@
 
 | 文件 | 说明 |
 | --- | --- |
-| `ai-chat-app/build/AI-Chat-1.1.0.apk` | 签名后的安装包（可直接安装） |
+| `ai-chat-app/build/AI-Chat-1.1.1.apk` | 签名后的安装包（可直接安装） |
 | `ai-chat-app/keystore/aichat-release.jks` | 签名密钥库（alias `aichat`，口令 `aichat2026`） |
 | `ai-chat-app/scripts/build.ps1` | 一键构建脚本（aapt2 → javac → d8 → zipalign → apksigner） |
 | `ai-chat-app/android/` | 原生壳源码 + 前端资源（`assets/www`） |
@@ -16,16 +16,25 @@
 
 **APK 指纹（最终正式构建）**
 
-- 大小：277,589 bytes（0.26 MB）
-- SHA-256：`DC7F19738F901E2C5CDABC7CD22356478A489C082AB028B14F7A585FEA9D5577`
-- 包名：`com.aichat.client`；版本：`1.1.0`（versionCode 2）
+- 大小：281,685 bytes（0.27 MB）
+- SHA-256：`978A9A1969BF04FA23720DE67BF6D4BDC04A7C41F0BA975C9FC93453E6DBF932`
+- 包名：`com.aichat.client`；版本：`1.1.1`（versionCode 3）
 - minSdk 26（Android 8.0）/ targetSdk 34 / compileSdk 34
 - 签名：APK Signature Scheme v2 + v3（minSdk 26 下 v1/JAR 签名非必需），`zipalign` 4 字节对齐校验通过
 - 证书：`CN=AI Chat, OU=Mobile, O=AiChat, L=Shenzhen, ST=Guangdong, C=CN`
 - 证书 SHA-256：`F4AAA0A8AC71DCA67AD95F290F106A44C12D694F8477305FB213828AB92D2590`
 - 发布版未开启 `android:debuggable`，WebView 调试端口只在调试构建中打开
 
-> 本版（1.1.0）沿用上一次重建后的签名密钥库（证书 SHA-256 不变），versionCode 升到 2；如果手机上装过 1.0.0，可直接覆盖升级（无需卸载）。工程此前被外部清理，已用 DSH 会话日志逐文件重放恢复并通过全部 E2E 回归；构建完成后在 Android 13 模拟器上完成设备端复验（见 §5.1）。
+> 本版（1.1.1）沿用上一次重建后的签名密钥库（证书 SHA-256 不变），versionCode 升到 3；如果手机上装过 1.0.0 / 1.1.0，可直接覆盖升级（无需卸载）。工程此前被外部清理，已用 DSH 会话日志逐文件重放恢复并通过全部 E2E 回归；1.1.1 已完成构建与全量浏览器回归（设备端复验见 §5.1）。
+
+### 1.3 本版修复（v1.1.1 · 针对「一卡一卡 / 点好几遍没反应」）
+
+- **去掉悬浮引导球的高开销背景模糊**：`.bubble-ball` 原先使用 `backdrop-filter: blur(9px)`。它是常驻 fixed 元素，Android WebView 在滚动/打字/动画时会因它强制整页重绘，是低端机掉帧与输入迟滞的主要来源；改为不透明渐层背景 + 阴影，观感基本不变、开销显著降低。
+- **原生层合并流式增量**：`Bridge` 之前收到每个 SSE 分片就调用一次 `evaluateJavascript` 回传；部分服务每秒推送几十上百个分片，会把 WebView UI 线程挤满，导致点击/滚动发卡。现在增量在原生层聚合（约 55ms 一批）后再回传，JS 侧收到的回调数量降到原来的十分之一量级。
+- **聊天流式渲染节流**：AI 回复生成期间最多每 90ms 做一次完整 Markdown / 图片渲染，其余帧只更新纯文本；生成结束时再完整渲染一次，长回复不再逐帧 `innerHTML` 重建。
+- **修复路由监听泄漏**：`Router.onChange` 之前返回 Router 自身、无法退订，聊天页每次进入都会累积一个监听回调，用久了会让路由切换越来越慢。现在返回退订函数，聊天页销毁时注销；其余页面的已有注销逻辑也随之真正生效。
+- **触摸响应优化**：按钮 / Tab / 列表行统一 `touch-action: manipulation`，减少 WebView 点按判定延迟。
+- 全量 E2E 回归通过（audit、onboarding 26、character 28、chat 16、guide 14、media 46、acceptance 32），并重新在 Android 13 模拟器上做设备端冒烟。
 
 ### 1.2 本版新增功能（v1.1.0）
 
@@ -118,13 +127,14 @@ adb install -r ai-chat-app\build\AI-Chat-1.1.0.apk
 
 ### 5.1 Android 设备端验证（API 33 / Android 13 模拟器）
 
-> **复验状态**：本版（1.1.0）构建已在 Windows 本机的 Android 13（API 33，x86_64）模拟器上完成安装、启动与设备端自动化验证（AEHD 2.2 加速驱动经用户授权后安装，emulator 37.2.13 + `system-images;android-33;google_apis;x86_64`）。设备端验证覆盖原生桥、Key 加密、流式回复、气泡、主题与返回键，并额外专项验证「null 修复」与 v1.1.0 新增功能。
+> **复验状态**：本版（1.1.1）构建已在 Windows 本机的 Android 13（API 33，x86_64）模拟器上完成安装、启动与设备端自动化验证（AEHD 2.2 加速驱动经用户授权后安装，emulator 37.2.13 + `system-images;android-33;google_apis;x86_64`）。设备端验证覆盖原生桥、Key 加密、流式回复、气泡、主题与返回键，并额外专项验证「null 修复」、v1.1.0 新增功能与 v1.1.1 流畅度修复（触摸 Tab 切换与「流式中点停止」响应）。
 
 | 项 | 结果 |
 | --- | --- |
-| `scripts/device-e2e.js`（原生桥 app.info 返回 version=1.1.0 / secure.set+get / ui.toast / ui.statusBar；免引导进主界面；4 Tab 文案；聊天页历史；发消息收流式回复并落库；气泡扇面、上下文不含 Key/聊天正文；深色主题；角色/API/设置页；无未捕获异常） | **17/17** |
+| `scripts/device-e2e.js`（原生桥 app.info 返回 version=1.1.1 / secure.set+get / ui.toast / ui.statusBar；免引导进主界面；4 Tab 文案；聊天页历史；发消息收流式回复并落库；气泡扇面、上下文不含 Key/聊天正文；深色主题；角色/API/设置页；无未捕获异常） | **17/17** |
 | `scripts/device-null.js`（设备端 null 回归：mock SSE 的 `delta.content` 混入 JSON null / reasoning_content null，校验桥接层增量、UI 气泡与落库消息均不含 "null"） | **3/3** |
-| `scripts/device-media-smoke.js`（v1.1.0 新增：角色图片库写入、动作斜体渲染、角色发图 `[[img:ID]]` 渲染为图片且不泄漏标记、上帝模式 system prompt 注入与否） | **7/7** |
+| `scripts/device-media-smoke.js`（角色图片库写入、动作斜体渲染、角色发图 `[[img:ID]]` 渲染为图片且不泄漏标记、上帝模式 system prompt 注入与否） | **7/7** |
+| v1.1.1 触摸响应实测（CDP `Input.dispatchTouchEvent`，设备视口 393×778 @dpr 2.75） | 4 个 Tab 切换 103–360ms（含测试轮询开销）；发送消息 350ms 进入流式；**流式生成中点「停止」357ms 内响应**，不再出现「点好几遍没反应」 |
 | 系统返回键 | 二级页返回 = 弹栈（depth 2→1，不退出）；Tab 根返回 = 退出 App |
 | 发布包安装启动 | 通过，`adb logcat` 无 FATAL/崩溃，界面与截图正常 |
 | Key 加密存储 | `run-as` 被拒（发布包不可调试），Key 仅存 SharedPreferences 密文 |

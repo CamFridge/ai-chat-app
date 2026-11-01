@@ -969,6 +969,19 @@
         return provider.defaultModel || (provider.models && provider.models[0]) || '';
       }
 
+      /* ---------- 问候语：首选 firstMessage，缺省时退回第一条备选（v1.2.0 契约 §2） ---------- */
+      function pickGreeting(character) {
+        var card = character || {};
+        var first = String(card.firstMessage || '').trim();
+        if (first) return { text: first, index: 0 };
+        var alts = Array.isArray(card.alternateGreetings) ? card.alternateGreetings : [];
+        for (var i = 0; i < alts.length; i++) {
+          var text = String(alts[i] || '').trim();
+          if (text) return { text: text, index: i + 1 };
+        }
+        return { text: '', index: 0 };
+      }
+
       function createSession(character, personas, providers, defProviderId, defPresetId) {
         var provider = pickProvider(providers, defProviderId);
         var model = pickProviderModel(provider);
@@ -983,6 +996,7 @@
           return presetPromise.then(function (preset) {
             if (!preset) preset = K.defaultPresetFor(character.type);
             var now = U.now();
+            var greeting = pickGreeting(character);
             var session = {
               id: U.uid('sess'),
               title: character.name || '新会话',
@@ -994,6 +1008,7 @@
               pinned: false,
               unread: 0,
               isGenerating: false,
+              greetingIndex: greeting.index,
               lastText: '',
               lastRole: '',
               lastAt: now,
@@ -1001,7 +1016,7 @@
               updatedAt: now
             };
             return D.put('sessions', session).then(function (saved) {
-              var first = String(character.firstMessage || '').trim();
+              var first = greeting.text;
               if (!first) return saved;
               // 角色开场白作为第一条 assistant 消息
               return D.put('messages', {
@@ -1108,6 +1123,25 @@
         }
       }, 120));
 
+      /* ---------- 角色主动消息：收到外部会话更新事件后刷新列表（v1.2.0 契约 §3.1） ---------- */
+      var refreshByExternal = U.debounce(function () {
+        if (state.destroyed) return;
+        if (!root.isConnected) return;
+        // tab 页被隐藏时（display:none）不刷新，等重新展示时 router 的 onChange 会补一次
+        if (root.offsetParent === null) return;
+        refresh();
+      }, 150);
+
+      function onSessionUpdated(ev) {
+        if (state.destroyed) return;
+        var detail = (ev && ev.detail) || {};
+        if (!detail.sessionId) return;
+        // 清掉该会话的旧摘要缓存，避免覆盖新的 lastText
+        try { delete state.previews[detail.sessionId]; } catch (e) { /* 忽略 */ }
+        refreshByExternal();
+      }
+      document.addEventListener('aichat:session-updated', onSessionUpdated);
+
       /* ---------- 页面被重新展示时刷新（新建会话/聊完返回/角色变更） ---------- */
       App.Router.onChange(function (cur) {
         if (state.destroyed) return;
@@ -1119,6 +1153,7 @@
       page.onDestroy(function () {
         state.destroyed = true;
         clearTimeout(pressTimer);
+        document.removeEventListener('aichat:session-updated', onSessionUpdated);
       });
 
       return load();

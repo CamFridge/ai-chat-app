@@ -50,6 +50,7 @@ public class MainActivity extends Activity {
     private static final String HOST = "app.local";
     private static final int REQ_IMAGE = 1001;
     private static final int REQ_IMPORT = 1002;
+    private static final int REQ_NOTIFY = 1003;
 
     private WebView webView;
     private Bridge bridge;
@@ -263,6 +264,19 @@ public class MainActivity extends Activity {
                 }
             }
         });
+    }
+
+    /** Android 13+ 通知权限（主动消息后台提醒用）。结果通过 notify.status 查询，不回调 JS。 */
+    public void requestNotificationPermission() {
+        try {
+            if (Build.VERSION.SDK_INT >= 33) {
+                if (checkSelfPermission("android.permission.POST_NOTIFICATIONS") != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                    requestPermissions(new String[]{"android.permission.POST_NOTIFICATIONS"}, REQ_NOTIFY);
+                }
+            }
+        } catch (Throwable t) {
+            Log.w(TAG, "request notification permission failed", t);
+        }
     }
 
     @Override
