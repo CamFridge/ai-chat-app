@@ -1,0 +1,1080 @@
+/* ============================================================
+ * pages-config.css —— 首次引导 / API 管理 / API 编辑 / 设置页样式
+ * 说明：
+ *   1. 全部使用 base.css 提供的主题变量（--bg/--card/--text/--line/--brand…），
+ *      因此浅色、深色、AMOLED 自适应；
+ *   2. 类名统一用 ob- / cfg- 前缀，避免与 base 冲突；
+ *   3. 不引入任何外部字体或图片资源。
+ * ============================================================ */
+
+/* ---------- 通用工具 ---------- */
+.cfg-page {
+  padding-bottom: 32px;
+}
+.hidden {
+  display: none !important;
+}
+
+/* base.css 只给 .field/.modal 内的输入框定义了样式，
+ * 引导页、API 编辑页的输入框不在这些容器里，这里统一补齐。 */
+.ob-field .input,
+.ob-key-row .input,
+.cfg-field .input,
+.cfg-key-row .input,
+.cfg-model-row .input,
+.cfg-model-native {
+  width: 100%;
+  min-height: 44px;
+  padding: 0 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--card-2);
+  color: var(--text);
+  font-size: 15px;
+  outline: 0;
+  -webkit-appearance: none;
+  appearance: none;
+}
+.cfg-model-native {
+  padding: 0 34px 0 12px;
+}
+/* base.css 的 .field .select（0,2,0）会覆盖上面的 0,1,0 规则，
+ * 这里用同等优先级、更靠后的规则把原生 select 拉回输入框外观。 */
+.field .cfg-model-native,
+.cfg-form .field .cfg-model-native {
+  width: 100%;
+  min-height: 44px;
+  padding: 0 34px 0 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--card-2);
+  color: var(--text);
+  font-size: 15px;
+  line-height: 44px;
+  -webkit-appearance: none;
+  appearance: none;
+}
+.ob-field .input:focus,
+.ob-key-row .input:focus,
+.cfg-field .input:focus,
+.cfg-key-row .input:focus,
+.cfg-model-row .input:focus,
+.cfg-model-native:focus {
+  border-color: var(--brand);
+}
+.ob-field .input::placeholder,
+.cfg-field .input::placeholder,
+.cfg-key-row .input::placeholder,
+.cfg-model-row .input::placeholder {
+  color: var(--text-3);
+}
+.ob-field.error .input,
+.cfg-field.error .input,
+.cfg-field.error .cfg-key-row .input {
+  border-color: var(--danger);
+}
+
+/* ============================================================
+ * 一、首次引导向导（onboarding.js）
+ * ============================================================ */
+.ob-wrap {
+  display: flex;
+  flex-direction: column;
+  flex: 1 0 auto;
+  min-height: 100%;
+  max-width: 720px;
+  margin: 0 auto;
+  padding-bottom: 8px;
+}
+.ob-head {
+  padding: 14px 16px 0;
+}
+.ob-progress {
+  display: flex;
+  gap: 6px;
+}
+.ob-seg {
+  flex: 1;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--line);
+  transition: background 0.2s ease;
+}
+.ob-seg.on {
+  background: var(--brand);
+}
+.ob-step-label {
+  margin-top: 8px;
+  font-size: 12px;
+  color: var(--text-3);
+}
+.ob-body {
+  flex: 1 0 auto;
+  padding: 18px 16px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.ob-footer {
+  position: sticky;
+  bottom: 0;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 16px calc(12px + env(safe-area-inset-bottom, 0px));
+  border-top: 1px solid var(--line);
+  background: var(--bg);
+}
+.ob-btn {
+  flex: 1;
+}
+.ob-footer-note {
+  flex: 1;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text-3);
+}
+
+/* 标题与段落 */
+.ob-h1 {
+  margin: 4px 0 0;
+  font-size: 22px;
+  line-height: 1.35;
+  font-weight: 600;
+  color: var(--text);
+}
+.ob-h2 {
+  margin: 0;
+  font-size: 17px;
+  line-height: 1.4;
+  font-weight: 600;
+  color: var(--text);
+}
+.ob-p {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.75;
+  color: var(--text-2);
+}
+
+/* 欢迎页图标 */
+.ob-hero {
+  display: flex;
+  justify-content: center;
+  padding: 6px 0 2px;
+}
+.ob-hero-icon {
+  width: 64px;
+  height: 64px;
+  border-radius: 20px;
+  background: rgba(7, 193, 96, 0.12);
+  color: var(--brand);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.ob-hero-icon svg {
+  width: 32px;
+  height: 32px;
+}
+
+/* 说明条目 */
+.ob-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.ob-info {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 12px;
+  border-radius: 12px;
+  background: var(--card);
+  border: 1px solid var(--line);
+}
+.ob-info-icon {
+  flex: none;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  background: rgba(7, 193, 96, 0.1);
+  color: var(--brand);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.ob-info-icon svg {
+  width: 18px;
+  height: 18px;
+}
+.ob-info-main {
+  flex: 1;
+  min-width: 0;
+}
+.ob-info-title {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text);
+}
+.ob-info-desc {
+  margin-top: 2px;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--text-2);
+}
+
+/* 供应商预设卡片 */
+.ob-presets {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+.ob-preset {
+  padding: 12px;
+  border-radius: 12px;
+  border: 1px solid var(--line);
+  background: var(--card);
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+.ob-preset:active {
+  background: var(--card-2);
+}
+.ob-preset.active {
+  border-color: var(--brand);
+  background: rgba(7, 193, 96, 0.08);
+}
+.ob-preset-name {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text);
+}
+.ob-preset-desc {
+  margin-top: 4px;
+  font-size: 12px;
+  line-height: 1.55;
+  color: var(--text-2);
+}
+.ob-preset-url {
+  margin-top: 6px;
+  font-size: 11px;
+  color: var(--text-3);
+}
+
+/* 表单字段（引导页） */
+.ob-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.ob-field-label {
+  font-size: 13px;
+  color: var(--text-3);
+}
+.ob-field .input {
+  width: 100%;
+}
+.ob-field-hint {
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text-3);
+}
+.ob-tip {
+  padding: 8px 12px;
+  border-radius: 10px;
+  background: rgba(7, 193, 96, 0.08);
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--brand);
+}
+
+/* API Key 输入 */
+.ob-key-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.ob-key-row .input {
+  flex: 1;
+  min-width: 0;
+}
+.ob-eye {
+  flex: none;
+  white-space: nowrap;
+}
+.ob-hint-box {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 12px;
+  border-radius: 12px;
+  background: var(--card-2);
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--text-2);
+}
+.ob-hint-icon {
+  flex: none;
+  width: 18px;
+  height: 18px;
+  margin-top: 1px;
+  color: var(--text-3);
+}
+.ob-hint-icon svg {
+  width: 16px;
+  height: 16px;
+}
+.ob-hint-text {
+  flex: 1;
+  min-width: 0;
+}
+
+/* 配置摘要 */
+.ob-summary {
+  padding: 2px 12px;
+  border-radius: 12px;
+  border: 1px solid var(--line);
+  background: var(--card);
+}
+.ob-sum-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--line);
+  font-size: 14px;
+}
+.ob-sum-row:last-child {
+  border-bottom: 0;
+}
+.ob-sum-label {
+  flex: none;
+  color: var(--text-3);
+}
+.ob-sum-value {
+  flex: 1;
+  min-width: 0;
+  text-align: right;
+  color: var(--text);
+  word-break: break-all;
+}
+.ob-sum-value.ok {
+  color: var(--brand);
+}
+.ob-sum-value.err {
+  color: var(--danger);
+}
+
+/* 测试连接结果 */
+.ob-test-btn {
+  margin-top: 2px;
+}
+.ob-result {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.ob-ok {
+  padding: 12px;
+  border-radius: 12px;
+  border: 1px solid rgba(7, 193, 96, 0.4);
+  background: rgba(7, 193, 96, 0.07);
+}
+.ob-ok-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--brand);
+}
+.ob-ok-desc {
+  margin-top: 6px;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--text-2);
+}
+.ob-ico {
+  display: inline-flex;
+  align-items: center;
+}
+.ob-ico svg {
+  width: 18px;
+  height: 18px;
+}
+.ob-model-preview {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 10px;
+}
+.ob-chip {
+  max-width: 100%;
+  padding: 3px 8px;
+  border-radius: 8px;
+  background: var(--card-2);
+  font-size: 12px;
+  color: var(--text-2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ob-error {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 12px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 59, 48, 0.35);
+  background: rgba(255, 59, 48, 0.06);
+}
+.ob-error-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--danger);
+}
+.ob-error-hint {
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--text-2);
+}
+.ob-error-raw {
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text-3);
+  word-break: break-all;
+}
+.ob-help-btn {
+  align-self: flex-start;
+}
+
+/* 完成页勾选 */
+.ob-check {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding-top: 4px;
+  font-size: 15px;
+  color: var(--text);
+  cursor: pointer;
+}
+.ob-check input {
+  width: 18px;
+  height: 18px;
+  accent-color: var(--brand);
+}
+.ob-check-text {
+  flex: 1;
+  min-width: 0;
+}
+
+/* 模型列表 */
+.ob-model-list {
+  max-height: 240px;
+  overflow-y: auto;
+  border-radius: 12px;
+  border: 1px solid var(--line);
+  background: var(--card);
+}
+.ob-model-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px;
+  border-bottom: 1px solid var(--line);
+  cursor: pointer;
+}
+.ob-model-item:last-child {
+  border-bottom: 0;
+}
+.ob-model-item:active {
+  background: var(--card-2);
+}
+.ob-model-item.active {
+  background: rgba(7, 193, 96, 0.08);
+}
+.ob-model-name {
+  flex: 1;
+  min-width: 0;
+  font-size: 14px;
+  color: var(--text);
+}
+.ob-radio {
+  flex: none;
+  position: relative;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: 1.5px solid var(--line);
+  box-sizing: border-box;
+}
+.ob-radio.on {
+  border-color: var(--brand);
+}
+.ob-radio.on::after {
+  content: '';
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  right: 3px;
+  bottom: 3px;
+  border-radius: 50%;
+  background: var(--brand);
+}
+
+/* ============================================================
+ * 二、API 管理（api-list.js）
+ * ============================================================ */
+.cfg-list-wrap {
+  padding-top: 8px;
+}
+.cfg-api-list {
+  background: var(--card);
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+}
+.cfg-api-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 8px 12px 16px;
+  cursor: pointer;
+}
+/* 行内分隔线交给 base 的 .list .cell + .cell::before 绘制（这里只调整缩进） */
+.cfg-api-list .cfg-api-row {
+  padding: 12px 8px 12px 14px;
+  gap: 10px;
+  border-bottom: 0;
+}
+.cfg-api-list .cfg-api-row + .cfg-api-row::before {
+  left: 64px;
+}
+.cfg-api-row:active {
+  background: var(--card-2);
+}
+.cfg-api-avatar {
+  flex: none;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: rgba(7, 193, 96, 0.12);
+  color: var(--brand);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.cfg-api-avatar svg {
+  width: 22px;
+  height: 22px;
+}
+.cfg-api-row .main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.cfg-row-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.cfg-row-name {
+  flex: 0 1 auto;
+  min-width: 0;
+  font-size: 15px;
+  font-weight: 500;
+  color: var(--text);
+}
+.cfg-row-sub {
+  font-size: 12px;
+  color: var(--text-2);
+}
+.cfg-row-sub2 {
+  font-size: 11px;
+  color: var(--text-3);
+}
+.cfg-row-meta {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 3px;
+  margin-left: 4px;
+}
+.cfg-row-time {
+  font-size: 11px;
+}
+.cfg-more {
+  flex: none;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--text-3);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+.cfg-more:active {
+  background: var(--card-2);
+}
+.cfg-more svg {
+  width: 18px;
+  height: 18px;
+}
+
+/* 徽标（状态 / 角色） */
+.cfg-badge {
+  display: inline-flex;
+  align-items: center;
+  flex: none;
+  padding: 1px 6px;
+  border-radius: 9px;
+  border: 1px solid currentColor;
+  font-size: 11px;
+  line-height: 16px;
+  white-space: nowrap;
+}
+.cfg-status-ok {
+  color: var(--brand);
+  background: rgba(7, 193, 96, 0.1);
+}
+.cfg-status-error {
+  color: var(--danger);
+  background: rgba(255, 59, 48, 0.08);
+}
+.cfg-status-unknown {
+  color: var(--text-3);
+  background: transparent;
+  border-color: var(--line);
+}
+.cfg-row-title .badge {
+  flex: none;
+}
+
+.cfg-footnote {
+  padding: 14px 16px 0;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--text-3);
+}
+
+/* 空态 / 加载态 / 错误态 */
+.cfg-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 8px;
+  padding: 48px 24px;
+}
+.cfg-empty .empty-icon {
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  background: var(--card-2);
+  color: var(--text-3);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.cfg-empty .empty-icon svg {
+  width: 30px;
+  height: 30px;
+}
+.cfg-empty-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 10px;
+  margin-top: 14px;
+}
+.cfg-loading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 48px 16px;
+}
+.cfg-error-box {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 16px;
+  padding: 16px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 59, 48, 0.35);
+  background: rgba(255, 59, 48, 0.05);
+}
+.cfg-error-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--danger);
+}
+.cfg-error-hint {
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--text-2);
+}
+.cfg-error-raw {
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text-3);
+  word-break: break-all;
+}
+.cfg-fatal {
+  margin: 24px 16px;
+}
+
+/* 兜底选择面板（UI.sheet 不可用时的替代品） */
+.cfg-picker-mask {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 9999;
+  background: rgba(0, 0, 0, 0.45);
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+}
+.cfg-picker {
+  width: 100%;
+  max-width: 560px;
+  max-height: 70vh;
+  overflow-y: auto;
+  background: var(--card);
+  border-radius: 14px 14px 0 0;
+  padding: 6px 0 calc(6px + env(safe-area-inset-bottom, 0px));
+  box-shadow: var(--shadow);
+}
+.cfg-picker-title {
+  padding: 14px 16px 10px;
+  font-size: 13px;
+  text-align: center;
+  color: var(--text-3);
+}
+.cfg-picker-item {
+  padding: 14px 16px;
+  border-top: 1px solid var(--line);
+  font-size: 16px;
+  text-align: center;
+  color: var(--text);
+  cursor: pointer;
+}
+.cfg-picker-item:active {
+  background: var(--card-2);
+}
+.cfg-picker-item.danger {
+  color: var(--danger);
+}
+.cfg-picker-cancel {
+  margin-top: 6px;
+  font-weight: 600;
+  color: var(--text-2);
+}
+
+/* ============================================================
+ * 三、API 编辑（api-edit.js）
+ * ============================================================ */
+.cfg-form {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 14px 16px 24px;
+}
+.cfg-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+/* base.css 的 .field 自带 padding 与分隔线，这里用 .cfg-form 的 gap 统一排版 */
+.cfg-form .cfg-field {
+  padding: 0;
+}
+.cfg-form .cfg-field + .cfg-field::before {
+  display: none;
+}
+.cfg-switch-list .cfg-switch-cell {
+  padding: 12px 16px;
+  border-bottom: 0;
+}
+.cfg-field-label {
+  font-size: 13px;
+  color: var(--text-3);
+}
+.cfg-field .input {
+  width: 100%;
+}
+.cfg-field.error .cfg-field-label {
+  color: var(--danger);
+}
+.cfg-field.error .input {
+  border-color: var(--danger);
+}
+.cfg-field .hint {
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text-3);
+}
+.cfg-field.error .hint {
+  color: var(--danger);
+}
+.cfg-key-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.cfg-key-row .input {
+  flex: 1;
+  min-width: 0;
+}
+.cfg-eye {
+  flex: none;
+  white-space: nowrap;
+}
+.cfg-model-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.cfg-model-row .input {
+  flex: 1;
+  min-width: 0;
+}
+.cfg-fetch-btn {
+  flex: none;
+  white-space: nowrap;
+}
+.cfg-model-select {
+  position: relative;
+  margin-top: 8px;
+}
+.cfg-model-select::after {
+  content: '';
+  position: absolute;
+  right: 14px;
+  top: 50%;
+  width: 0;
+  height: 0;
+  margin-top: -3px;
+  border-left: 5px solid transparent;
+  border-right: 5px solid transparent;
+  border-top: 6px solid var(--text-3);
+  pointer-events: none;
+}
+.cfg-model-native {
+  width: 100%;
+}
+.cfg-test-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.cfg-result {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.cfg-result:empty {
+  display: none;
+}
+.cfg-ok-box {
+  padding: 12px;
+  border-radius: 12px;
+  border: 1px solid rgba(7, 193, 96, 0.4);
+  background: rgba(7, 193, 96, 0.07);
+}
+.cfg-ok-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--brand);
+}
+.cfg-ok-desc {
+  margin-top: 6px;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--text-2);
+}
+.cfg-ico {
+  display: inline-flex;
+  align-items: center;
+}
+.cfg-ico svg {
+  width: 18px;
+  height: 18px;
+}
+.cfg-switch-list {
+  background: var(--card);
+  border-radius: 12px;
+  border: 1px solid var(--line);
+  overflow: hidden;
+}
+.cfg-switch-cell {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  cursor: pointer;
+}
+.cfg-switch-cell .main {
+  flex: 1;
+  min-width: 0;
+}
+.cfg-switch-cell .title {
+  font-size: 15px;
+  color: var(--text);
+}
+.cfg-switch-cell .sub {
+  margin-top: 2px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text-3);
+}
+.cfg-actions {
+  margin-top: 4px;
+}
+.cfg-notice {
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: rgba(7, 193, 96, 0.08);
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--text-2);
+}
+
+/* 开关（全局通用） */
+.cfg-switch {
+  flex: none;
+  position: relative;
+  width: 46px;
+  height: 28px;
+  border-radius: 14px;
+  background: var(--line);
+  cursor: pointer;
+  transition: background 0.18s ease;
+}
+.cfg-switch::after {
+  content: '';
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25);
+  transition: left 0.18s ease;
+}
+.cfg-switch.on {
+  background: var(--brand);
+}
+.cfg-switch.on::after {
+  left: 21px;
+}
+
+/* ============================================================
+ * 四、设置（settings.js）
+ * ============================================================ */
+.cfg-group {
+  margin-top: 12px;
+}
+.cfg-group-title {
+  padding: 8px 16px 6px;
+  font-size: 13px;
+  color: var(--text-3);
+}
+.cfg-group-list {
+  background: var(--card);
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+}
+.cfg-cell {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 16px;
+}
+/* base.css 的 .list .cell 优先级更高，这里显式覆盖内边距与分隔线缩进 */
+.cfg-group-list .cfg-cell {
+  padding: 13px 16px;
+  gap: 10px;
+  border-bottom: 0;
+}
+.cfg-group-list .cfg-cell + .cfg-cell::before {
+  left: 16px;
+}
+.cfg-group-list .cfg-cell:last-child {
+  border-bottom: 0;
+}
+.cfg-cell .main {
+  flex: 1;
+  min-width: 0;
+}
+.cfg-cell .title {
+  font-size: 15px;
+  line-height: 1.4;
+  color: var(--text);
+}
+.cfg-cell .sub {
+  margin-top: 2px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text-3);
+}
+.cfg-cell-value {
+  flex: none;
+  max-width: 45%;
+  font-size: 13px;
+  text-align: right;
+  color: var(--text-3);
+}
+.cfg-chev {
+  flex: none;
+  display: flex;
+  align-items: center;
+  color: var(--text-3);
+  opacity: 0.7;
+}
+.cfg-chev svg {
+  width: 16px;
+  height: 16px;
+}
+.cfg-clickable {
+  cursor: pointer;
+}
+.cfg-clickable:active {
+  background: var(--card-2);
+}
+.cfg-danger .title {
+  color: var(--danger);
+}
+.cfg-danger-label {
+  flex: none;
+  font-size: 14px;
+  color: var(--danger);
+}
+
+/* 小屏适配 */
+@media (max-width: 360px) {
+  .ob-presets {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .cfg-cell-value {
+    max-width: 40%;
+  }
+}
