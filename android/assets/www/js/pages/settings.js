@@ -16,6 +16,7 @@
   // v1.2.0 角色主动消息：可选间隔（分钟），默认 60
   var PROACTIVE_INTERVALS = [15, 30, 60, 120];
   var PROACTIVE_DEFAULT_INTERVAL = 60;
+  var PROACTIVE_RANDOM_INTERVAL = 0;
 
   App.Router.register('settings', {
     tab: true,
@@ -498,11 +499,17 @@
       }
 
       // ---------- 角色主动消息（v1.2.0） ----------
-      // 只接受 15/30/60/120；非法值回退到默认 60
+      // 15/30/60/120，或 0 表示「随机间隔」（每次从 15~120 分钟重新随机）
       function normalizeProactiveInterval(value) {
         var n = typeof value === 'number' ? value : parseInt(value, 10);
-        if (!isFinite(n) || PROACTIVE_INTERVALS.indexOf(n) < 0) return PROACTIVE_DEFAULT_INTERVAL;
+        if (!isFinite(n)) return PROACTIVE_DEFAULT_INTERVAL;
+        if (n === PROACTIVE_RANDOM_INTERVAL) return n;
+        if (PROACTIVE_INTERVALS.indexOf(n) < 0) return PROACTIVE_DEFAULT_INTERVAL;
         return n;
+      }
+
+      function proactiveIntervalLabel(n) {
+        return n === PROACTIVE_RANDOM_INTERVAL ? '随机（15~120 分钟）' : n + ' 分钟';
       }
 
       function proactive() {
@@ -557,6 +564,13 @@
         var items = PROACTIVE_INTERVALS.map(function (n) {
           return { id: n, value: n, label: n + ' 分钟' };
         });
+        items.push({
+          id: 'random',
+          value: PROACTIVE_RANDOM_INTERVAL,
+          label: '随机间隔（15~120 分钟）',
+          desc: '每次从 15 到 120 分钟之间重新随机，不会总在固定时间点打扰'
+        });
+        var selected = state.proactiveIntervalMin === PROACTIVE_RANDOM_INTERVAL ? 'random' : state.proactiveIntervalMin;
         var task;
         try {
           if (UI && typeof UI.sheet === 'function') {
@@ -564,7 +578,7 @@
               UI.sheet({
                 title: '主动消息间隔',
                 items: items,
-                selected: state.proactiveIntervalMin
+                selected: selected
               })
             );
           } else {
@@ -576,8 +590,9 @@
         Promise.resolve(task)
           .then(async function (picked) {
             if (picked === null || picked === undefined) return;
-            var n = normalizeProactiveInterval(normalizePick(picked));
-            if (PROACTIVE_INTERVALS.indexOf(n) < 0) return;
+            var raw = normalizePick(picked);
+            var n = raw === 'random' ? PROACTIVE_RANDOM_INTERVAL : normalizeProactiveInterval(raw);
+            if (n !== PROACTIVE_RANDOM_INTERVAL && PROACTIVE_INTERVALS.indexOf(n) < 0) return;
             await DB.settings.set('proactive_interval_min', n);
             // 同步给前端轮询器（存在时）；它内部可能也会写一次 DB
             var P = proactive();
@@ -591,7 +606,7 @@
             state.proactiveIntervalMin = n;
             state.settingsMap.proactive_interval_min = n;
             if (!destroyed) render();
-            toast('已设为 ' + n + ' 分钟');
+            toast('已设为' + (n === PROACTIVE_RANDOM_INTERVAL ? '随机间隔（15~120 分钟）' : ' ' + n + ' 分钟'));
           })
           .catch(function (e) {
             toast('保存失败：' + errText(e));
@@ -687,8 +702,10 @@
             }),
             cell({
               title: '主动消息间隔',
-              sub: '距上次聊天超过这个时长后，角色可能主动发来消息',
-              value: state.proactiveIntervalMin + ' 分钟',
+              sub: state.proactiveIntervalMin === PROACTIVE_RANDOM_INTERVAL
+                ? '每次在上次聊天后随机等待 15~120 分钟，到点后角色可能主动发来消息'
+                : '距上次聊天超过这个时长后，角色可能主动发来消息',
+              value: proactiveIntervalLabel(state.proactiveIntervalMin),
               chev: true,
               onClick: chooseProactiveInterval
             })

@@ -15,9 +15,13 @@
   var TICK_MS = 30000;
   var DAY_CAP = 3;
   var DEFAULT_INTERVAL = 60;
+  // intervalMin === 0 表示随机间隔：每次从 [RANDOM_LO, RANDOM_HI] 分钟重新随机
+  var RANDOM_LO = 15;
+  var RANDOM_HI = 120;
 
   var enabled = false;
   var intervalMin = DEFAULT_INTERVAL;
+  var activeIntervalMin = DEFAULT_INTERVAL; // 当前这一轮实际使用的间隔（随机模式下为本轮随机值）
   var loaded = false;
   var timer = null;
   var busy = false;
@@ -78,11 +82,27 @@
   }
 
   /* ---------------- 设置读写 ---------------- */
+  function rollActiveInterval() {
+    if (intervalMin === 0) {
+      activeIntervalMin = RANDOM_LO + Math.floor(Math.random() * (RANDOM_HI - RANDOM_LO + 1));
+    } else {
+      activeIntervalMin = intervalMin;
+    }
+    return activeIntervalMin;
+  }
+
   P.status = function () {
-    return { enabled: !!enabled, intervalMin: intervalMin, permission: permission };
+    return {
+      enabled: !!enabled,
+      intervalMin: intervalMin,
+      activeIntervalMin: activeIntervalMin,
+      random: intervalMin === 0,
+      permission: permission
+    };
   };
   P.getEnabled = function () { return !!enabled; };
   P.getIntervalMin = function () { return intervalMin; };
+  P.getActiveIntervalMin = function () { return activeIntervalMin; };
 
   function applySettings() {
     return Promise.all([
@@ -91,13 +111,21 @@
     ]).then(function (arr) {
       enabled = !!arr[0];
       var n = Number(arr[1]);
-      intervalMin = (n >= 5 && n <= 720) ? n : DEFAULT_INTERVAL;
+      if (n === 0) {
+        intervalMin = 0;
+      } else if (n >= 5 && n <= 720) {
+        intervalMin = n;
+      } else {
+        intervalMin = DEFAULT_INTERVAL;
+      }
+      rollActiveInterval();
       loaded = true;
     });
   }
 
   P.setEnabled = function (on) {
     enabled = !!on;
+    if (enabled) rollActiveInterval();
     return settingSet('proactive_enabled', enabled).then(function () {
       if (!enabled) {
         busy = false;
@@ -112,15 +140,17 @@
 
   P.setIntervalMin = function (n) {
     var v = Number(n);
-    if (!(v >= 5 && v <= 720)) v = DEFAULT_INTERVAL;
+    if (!(v === 0 || (v >= 5 && v <= 720))) v = DEFAULT_INTERVAL;
     intervalMin = v;
+    rollActiveInterval();
     return settingSet('proactive_interval_min', v);
   };
 
   P.statusText = function () {
+    var label = intervalMin === 0 ? ('随机 ' + activeIntervalMin + ' 分钟') : (intervalMin + ' 分钟');
     if (!enabled) return '未开启';
-    if (permission === 'denied') return intervalMin + ' 分钟 · 仅前台';
-    return intervalMin + ' 分钟';
+    if (permission === 'denied') return label + ' · 仅前台';
+    return label;
   };
 
   /* ---------------- 后台通知 ---------------- */
@@ -129,7 +159,7 @@
     var name = (lastTarget && lastTarget.name) || '';
     var body = name ? '「' + name + '」想你了，回来聊聊吧' : '你的角色想你了，回来聊聊吧';
     return bridgeCall('notify.schedule', {
-      delayMs: Math.max(1, intervalMin) * 60000,
+      delayMs: Math.max(1, activeIntervalMin) * 60000,
       title: 'AI 聊天',
       body: body
     });
@@ -309,6 +339,8 @@
     }).catch(function () {
       try { settingSet('proactive_last_at', now); } catch (e) { /* 忽略 */ }
     }).then(function () {
+      // 本轮结束：随机模式下为下一轮重新抽一个间隔，避免固定节奏
+      if (intervalMin === 0) rollActiveInterval();
       busy = false;
       return true;
     });
@@ -320,7 +352,7 @@
     return lastMessageOf(session.id).then(function (last) {
       var lastAt = (last && last.createdAt) || session.updatedAt || session.createdAt || 0;
       if (!lastAt) return false;
-      return (Date.now() - lastAt) >= intervalMin * 60000;
+      return (Date.now() - lastAt) >= activeIntervalMin * 60000;
     });
   }
 
@@ -342,7 +374,7 @@
       var day = arr[1] || '';
       var count = Number(arr[2] || 0);
       var now = Date.now();
-      if (lastAt && now - lastAt < intervalMin * 60000) return false;
+      if (lastAt && now - lastAt < activeIntervalMin * 60000) return false;
       var today = todayKey();
       if (day === today && count >= DAY_CAP) return false;
       return pickTarget().then(function (session) {
