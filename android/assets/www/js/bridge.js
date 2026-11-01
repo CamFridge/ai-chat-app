@@ -221,6 +221,18 @@
             case 'app.setBackGuard':
               resolve({ ok: true });
               return;
+            /* 主动消息本地通知（v1.2.0）：浏览器 mock 记录调用，便于 E2E 断言 */
+            case 'notify.status':
+              resolve({ permission: window.__AICHAT_NOTIFY_PERMISSION__ || 'granted', supported: true });
+              return;
+            case 'notify.schedule':
+            case 'notify.cancel':
+            case 'notify.requestPermission': {
+              var calls = window.__AICHAT_NOTIFY_CALLS__ || (window.__AICHAT_NOTIFY_CALLS__ = []);
+              calls.push({ method: method, args: args || {} });
+              resolve({ ok: true });
+              return;
+            }
             default:
               resolve({ ok: true });
           }

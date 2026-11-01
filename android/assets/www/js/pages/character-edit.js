@@ -7,7 +7,8 @@
  *   - 类型可切换，但需要二次确认，并提示部分字段会重置；
  *   - 保存落库（保留 id / createdAt，重建 systemPrompt）；
  *   - 「让它更像…」：可选，固定用引导 API 按意见微调；
- *   - 角色图片库：查看 / 添加 / 重命名 / 改说明 / 删除（落 characterImages 表，供聊天里主动发图）。
+ *   - 角色图片库：查看 / 添加 / 重命名 / 改说明 / 删除（落 characterImages 表，供聊天里主动发图）；
+ *   - 问候语：首选（firstMessage）+ 0~10 条备选（alternateGreetings），聊天页可随时切换。
  * ============================================================ */
 (function () {
   'use strict';
@@ -33,6 +34,7 @@
     imgModal: null,    // 图片库弹窗句柄
     imgGridBox: null,  // 弹窗内网格容器（新增/删除后局部刷新）
     imgCountEl: null,  // 弹窗内数量文案
+    greetModal: null,  // 问候语弹窗句柄（首选 + 备选）
     destroyed: false,
     busy: false,
     loaded: false
@@ -102,8 +104,8 @@
       list.appendChild(fieldRow(key, def.label, state.card[key], def));
     });
 
-    // 开场白（两类共有）
-    list.appendChild(fieldRow('firstMessage', '开场白', state.card.firstMessage, { multiline: true }));
+    // 问候语（首选 + 备选，两类共有）
+    list.appendChild(greetingsRow());
 
     // 示例对话（仅陪聊）
     if (state.card.type !== 'assistant') {
@@ -451,6 +453,192 @@
     }
   }
 
+  /* ------------------------------------------------------------
+   * 问候语（首选 + 备选）
+   *   - firstMessage：首选问候语，新建会话时默认使用；
+   *   - alternateGreetings：备选问候语（0~10 条，每条 ≤200 字），
+   *     聊天页「…」菜单里可以随时切换。
+   * ---------------------------------------------------------- */
+
+  var MAX_GREETINGS = 10;      // 备选问候语上限
+  var MAX_GREETING_LEN = 200;  // 单条上限（字符）
+
+  // 取角色卡上的备选问候语（过滤空串 / 非字符串，最多 10 条）
+  function altGreetingsOf(card) {
+    var list = (card && Array.isArray(card.alternateGreetings)) ? card.alternateGreetings : [];
+    return list.filter(function (s) {
+      return typeof s === 'string' && !!s.trim();
+    }).slice(0, MAX_GREETINGS);
+  }
+
+  function greetingsRow() {
+    var n = altGreetingsOf(state.card).length;
+    var cell = UI.el('div', {
+      class: 'cell ck-field',
+      attrs: { role: 'button', tabindex: '0', 'data-guide-focus': 'greetings' }
+    },
+      UI.el('div', { class: 'main' },
+        UI.el('div', { class: 'ck-field-label' },
+          UI.el('span', { class: 'ck-field-title', text: '问候语' })
+        ),
+        UI.el('div', { class: 'ck-field-value', text: '首选 + ' + n + ' 条备选' })
+      ),
+      UI.el('span', { class: 'chev', html: UI.icon('chev', 17) })
+    );
+    cell.addEventListener('click', openGreetingsModal);
+    return cell;
+  }
+
+  function closeGreetModal() {
+    if (!state.greetModal) return;
+    var h = state.greetModal;
+    state.greetModal = null;
+    try { h.close(); } catch (e) { /* 忽略 */ }
+  }
+
+  function openGreetingsModal() {
+    if (!state.card || state.destroyed) return;
+    if (state.greetModal) return;
+
+    var card = state.card;
+    var draftAlts = altGreetingsOf(card).slice(0, MAX_GREETINGS);
+
+    var content = UI.el('div', { class: 'ck-greet-modal' });
+    content.appendChild(UI.el('div', {
+      class: 'ck-greet-desc',
+      text: '首选是新建会话默认的开场白；备选可以在聊天页随时切换。'
+    }));
+
+    // 首选问候语
+    var prefField = UI.el('div', { class: 'ck-greet-field' });
+    prefField.appendChild(UI.el('div', { class: 'ck-greet-label' },
+      UI.el('span', { text: '首选问候语' })
+    ));
+    var prefTa = UI.el('textarea', {
+      class: 'ck-greet-ta',
+      attrs: { rows: '3', placeholder: '例如：晚上好呀，今天想聊点什么？', 'aria-label': '首选问候语' }
+    });
+    prefTa.value = card.firstMessage || '';
+    prefField.appendChild(prefTa);
+    content.appendChild(prefField);
+
+    // 备选问候语
+    var altHead = UI.el('div', { class: 'ck-greet-label' },
+      UI.el('span', { text: '备选问候语' }),
+      UI.el('span', { class: 'ck-greet-count' })
+    );
+    var listBox = UI.el('div', { class: 'ck-greet-list' });
+    var addBtn = UI.el('button', {
+      class: 'btn ghost block ck-greet-add',
+      type: 'button',
+      attrs: { 'data-guide-tap': 'addAlternateGreeting' }
+    });
+    var hint = UI.el('div', {
+      class: 'ck-greet-hint',
+      text: '最多 ' + MAX_GREETINGS + ' 条备选，每条不超过 ' + MAX_GREETING_LEN + ' 字。'
+    });
+    content.appendChild(altHead);
+    content.appendChild(listBox);
+    content.appendChild(hint);
+    content.appendChild(addBtn);
+
+    // 底部按钮：取消 / 保存
+    var foot = UI.el('div', { class: 'ck-greet-foot' });
+    var cancelBtn = UI.el('button', { class: 'btn ghost', type: 'button', text: '取消' });
+    var saveBtn = UI.el('button', { class: 'btn primary', type: 'button', text: '保存' });
+    foot.appendChild(cancelBtn);
+    foot.appendChild(saveBtn);
+    content.appendChild(foot);
+
+    // 渲染备选列表（新增/删除后局部重绘，保留已输入内容）
+    function refreshAlts() {
+      UI.clear(listBox);
+      if (!draftAlts.length) {
+        listBox.appendChild(UI.el('div', { class: 'ck-greet-empty', text: '还没有备选问候语' }));
+      } else {
+        draftAlts.forEach(function (text, idx) {
+          var row = UI.el('div', { class: 'ck-greet-item' });
+          var ta = UI.el('textarea', {
+            class: 'ck-greet-ta',
+            attrs: { rows: '2', maxlength: String(MAX_GREETING_LEN), placeholder: '输入一条备选问候语' }
+          });
+          ta.value = text == null ? '' : String(text);
+          ta.addEventListener('input', function () { draftAlts[idx] = ta.value; });
+          var del = UI.el('button', {
+            class: 'ck-greet-del',
+            type: 'button',
+            text: '×',
+            attrs: { 'aria-label': '删除这条备选问候语' }
+          });
+          del.addEventListener('click', function () {
+            draftAlts.splice(idx, 1);
+            refreshAlts();
+          });
+          row.appendChild(ta);
+          row.appendChild(del);
+          listBox.appendChild(row);
+        });
+      }
+      // 数量 + 上限状态
+      altHead.querySelector('.ck-greet-count').textContent = draftAlts.length + ' / ' + MAX_GREETINGS;
+      var full = draftAlts.length >= MAX_GREETINGS;
+      addBtn.disabled = full;
+      addBtn.textContent = full ? '已达上限（' + MAX_GREETINGS + ' 条）' : '＋ 添加备选';
+    }
+
+    addBtn.addEventListener('click', function () {
+      if (draftAlts.length >= MAX_GREETINGS) {
+        UI.toast('最多添加 ' + MAX_GREETINGS + ' 条备选问候语', 'error');
+        return;
+      }
+      draftAlts.push('');
+      refreshAlts();
+      var tas = listBox.querySelectorAll('textarea');
+      if (tas.length) tas[tas.length - 1].focus();
+    });
+
+    cancelBtn.addEventListener('click', closeGreetModal);
+
+    saveBtn.addEventListener('click', function () {
+      // 首选：去首尾空白；备选：去空白、滤空串、截断 200 字、最多 10 条
+      var preferred = String(prefTa.value == null ? '' : prefTa.value).trim();
+      var alts = draftAlts.map(function (s) {
+        return String(s == null ? '' : s).trim();
+      }).filter(function (s) {
+        return !!s;
+      }).map(function (s) {
+        return s.length > MAX_GREETING_LEN ? s.slice(0, MAX_GREETING_LEN) : s;
+      }).slice(0, MAX_GREETINGS);
+
+      card.firstMessage = preferred;
+      card.alternateGreetings = alts;
+      if (!card.fieldOrigin) card.fieldOrigin = {};
+      card.fieldOrigin.firstMessage = 'user';
+      card.fieldOrigin.alternateGreetings = 'user';
+      // 问候语变化后 systemPrompt 需要重建
+      delete card.fieldOrigin.systemPrompt;
+      card.systemPrompt = '';
+
+      closeGreetModal();
+      render();                       // 先刷新入口行副标题
+      saveCard({ stay: true });       // 沿用页面现有保存流程落库（不另建记录，保存后停留本页）
+    });
+
+    refreshAlts();
+
+    state.greetModal = UI.modal({
+      title: '问候语',
+      content: content,
+      dismissible: true,
+      onClose: function () { state.greetModal = null; }
+    });
+    try {
+      state.greetModal.box.style.maxHeight = 'min(80vh, calc(100vh - 150px))';
+      state.greetModal.box.style.overflowY = 'auto';
+    } catch (e) { /* 忽略 */ }
+    try { prefTa.focus(); } catch (e) { /* 忽略 */ }
+  }
+
   function dialogsRow() {
     var list = state.card.exampleDialogues || [];
     var text = list.map(function (d) {
@@ -500,6 +688,7 @@
     if (!state.page || !state.page.guide || !state.card) return;
     var filled = { name: !!state.card.name, type: true };
     filled.characterImages = (state.images || []).length > 0;
+    filled.greetings = !!(String(state.card.firstMessage || '').trim() || altGreetingsOf(state.card).length);
     var missing = [];
     if (!state.card.name) missing.push('name');
     if (state.card.type === 'assistant') {
@@ -753,9 +942,11 @@
     return true;
   }
 
-  function saveCard() {
+  // opts.stay === true：保存后停留在当前页（问候语弹窗保存时用）
+  function saveCard(opts) {
     if (state.busy) return Promise.resolve(null);
     if (!state.card || !validate()) return Promise.resolve(null);
+    var stay = !!(opts && opts.stay === true);
 
     var card = state.card;
     var now = Kit.now();
@@ -774,7 +965,11 @@
       state.busy = false;
       Kit.notifyData('characters');
       UI.toast('已保存', 'ok');
-      try { App.Router.pop(); } catch (e) { /* 忽略 */ }
+      if (stay) {
+        render();  // 停留时刷新页面（如「首选 + N 条备选」副标题）
+      } else {
+        try { App.Router.pop(); } catch (e) { /* 忽略 */ }
+      }
       return null;
     }).catch(function (err) {
       state.busy = false;
@@ -802,12 +997,14 @@
       state.imgModal = null;
       state.imgGridBox = null;
       state.imgCountEl = null;
+      state.greetModal = null;
       state.id = (params && params.id) || '';
 
       page.setTitle('编辑角色');
 
       page.onDestroy(function () {
         state.destroyed = true;
+        closeGreetModal();
         if (state.imgModal) {
           try { state.imgModal.close(); } catch (e) { /* 忽略 */ }
           state.imgModal = null;

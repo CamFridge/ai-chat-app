@@ -7,9 +7,9 @@
 | 项 | 值 |
 | --- | --- |
 | 文件 | [`build/AI-Chat-1.1.0.apk`](build/AI-Chat-1.1.0.apk) |
-| 大小 | 277,589 bytes（0.26 MB） |
-| SHA-256 | `DC7F19738F901E2C5CDABC7CD22356478A489C082AB028B14F7A585FEA9D5577` |
-| 包名 / 版本 | `com.aichat.client` / 1.1.0（versionCode 2） |
+| 大小 | 281,685 bytes（0.27 MB） |
+| SHA-256 | `978A9A1969BF04FA23720DE67BF6D4BDC04A7C41F0BA975C9FC93453E6DBF932` |
+| 包名 / 版本 | `com.aichat.client` / 1.1.1（versionCode 3） |
 | 系统要求 | Android 8.0+（minSdk 26，targetSdk 34） |
 | 签名 | v2 + v3，证书 `CN=AI Chat`，SHA-256 `F4AAA0A8AC71DCA67AD95F290F106A44C12D694F8477305FB213828AB92D2590` |
 
@@ -23,6 +23,7 @@ adb install -r build\AI-Chat-1.1.0.apk
 
 ## 本版更新
 
+- **流畅度修复（v1.1.1，针对「一卡一卡 / 点好几遍没反应」）**：移除悬浮引导球常驻的 `backdrop-filter` 背景模糊（Android WebView 上会强制整页重绘）；原生桥把 SSE 流式增量按约 55ms 合并后再回传，避免大量 `evaluateJavascript` 挤占 UI 线程；聊天流式渲染限制为最多每 90ms 一次完整 Markdown/图片渲染；修复 `Router.onChange` 无法退订导致的监听累积泄漏；按钮/Tab/列表行统一 `touch-action: manipulation`。
 - **角色图片库**：每个角色独立图片库（最多 60 张），编辑角色页可添加/预览/重命名/删除；引导助手发图后可一键「加到角色图片库」。
 - **聊天收发图片与文件**：输入框「＋」可发相册图片（多模态发送）或文本文件；角色会根据图片库用 `[[img:ID]]` 主动发图。
 - **动作/神态斜体**：模型用 `*动作*` 表示动作神态，渲染为斜体细字，台词保持正文字体。
@@ -45,7 +46,7 @@ adb install -r build\AI-Chat-1.1.0.apk
 
 - 无头 Chrome E2E：`scripts/audit.js`、`scripts/e2e-onboarding.js`(26)、`scripts/e2e-character.js`(28)、`scripts/e2e-chat.js`(16)、`scripts/e2e-guide.js`(14)、`scripts/e2e-acceptance.js`(32)、`scripts/e2e-media.js`(46) 全部通过。
 - 「一串 null」修复单测（桌面 JVM + 真实 `org.json`，从 `Net.java` 原样提取方法）：`scripts/jvm-null/` **13/13 ALL PASS**（null 增量、reasoning_content 忽略、流式拼接不含 "null"）。
-- 设备端验证（v1.1.0 发布包，Android 13 / API 33 模拟器，AEHD 加速）：`scripts/device-e2e.js` **17/17**（原生桥、主界面、聊天流式回复并落库、气泡扇面、暗色主题、无 JS 异常）、`scripts/device-null.js` **3/3**、`scripts/device-media-smoke.js` **7/7**（图片库、动作斜体、角色发图、上帝模式 prompt）；系统返回键行为正确；截图见 `build/device/`（含 `21-media-god.png`）。
+- 设备端验证（v1.1.1 发布包，Android 13 / API 33 模拟器，AEHD 加速）：`scripts/device-e2e.js` **17/17**（原生桥、主界面、聊天流式回复并落库、气泡扇面、暗色主题、无 JS 异常）、`scripts/device-null.js` **3/3**、`scripts/device-media-smoke.js` **7/7**（图片库、动作斜体、角色发图、上帝模式 prompt）；触摸实测：Tab 切换 103–360ms、流式中点「停止」357ms 响应；系统返回键行为正确；截图见 `build/device/`（含 `21-media-god.png`）。
 - 截图：`build/shots/`、`build/shots-extra/`、`build/device/`（`80-81` 图片库与预览、`82-84` 附件与发图/斜体、`85` 上帝模式、`86` 帮助加图）。
 
 ## 构建

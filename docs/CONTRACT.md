@@ -220,3 +220,14 @@ page.guide({
 3. 页面必须处理空态/加载/错误态；所有异步 catch。
 4. 不要 `alert/prompt/confirm`；用 `UI.*`。
 5. 不确定接口先读本契约；再不确定找 Lead，不要臆造。
+
+## 15. v1.2.0 迭代（主动消息 + 问候语）
+
+> 完整契约见 `docs/FEATURE-proactive-greetings.md`（实现前必读）。要点：
+
+- `characters.alternateGreetings: string[]`（备选问候语，0~10 条，每条 ≤200 字）；`firstMessage` 即**首选问候语**。
+- `sessions.greetingIndex: number`（0=首选，1..N=第 N 条备选，缺省 0）；换开场白仅允许在会话无用户消息时。
+- settings 新键：`proactive_enabled`(bool) / `proactive_interval_min`(15|30|60|120) / `proactive_last_at`(ts) / `proactive_day`(YYYY-MM-DD) / `proactive_day_count`(0~3)。
+- 前端模块 `App.Proactive`（`js/proactive.js`，Lead 所有）：`init()/setEnabled(bool)/getEnabled()/getIntervalMin()/setIntervalMin(n)/status()/checkNow()`；原生桥方法 `notify.schedule/notify.cancel/notify.status/notify.requestPermission`。
+- 聊天页「…」菜单新增 `greeting`「换个开场白」；设置页新增分组「角色主动消息」；角色编辑页新增「问候语」入口。
+- 本迭代禁止修改 `keystore/`；构建必须复用现有签名库（证书 SHA-256 `F4AAA0A8…`），版本 `1.2.0`/`versionCode 4`。

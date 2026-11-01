@@ -145,6 +145,7 @@
     state.habits = d.habits || '';
     state.extra = d.extra || '';
     state.card = d.card || null;
+    if (state.card) ensureAltGreetings(state.card);
     state.versions = Array.isArray(d.versions) ? d.versions : [];
     state.versionIndex = typeof d.versionIndex === 'number' ? d.versionIndex : state.versions.length - 1;
     state.raw = d.raw || '';
@@ -1073,6 +1074,7 @@
 
       if (res && res.ok && res.card) {
         var card = res.card;
+        ensureAltGreetings(card); // AI 返回可能没有 alternateGreetings
         state.busy = false;
         state.genPhase = 'done';
         state.card = card;
@@ -1161,6 +1163,7 @@
     if (state.extra) card.fieldOrigin.draft = 'user';
     card.draft = { extra: String(state.extra || '') };
     card.systemPrompt = '';
+    card.alternateGreetings = [];
     card.createdAt = Kit.now();
     card.updatedAt = card.createdAt;
     return card;
@@ -1173,6 +1176,35 @@
       state.versionIndex = -1;
     }
     return state.card;
+  }
+
+  /* ------------------------------------------------------------
+   * 问候语数据保证（v1.2.0）
+   *   - 首选问候语 = firstMessage（已有字段）
+   *   - 备选问候语 = alternateGreetings（string[]，0~10 条，每条 ≤200 字）
+   *   创建向导不提供复杂编辑（编辑页负责），只保证字段存在、类型正确、不丢数据。
+   * ---------------------------------------------------------- */
+
+  var MAX_ALT_GREETINGS = 10;
+  var MAX_ALT_GREETING_LEN = 200;
+
+  // 清洗备选问候语：只留字符串、trim、滤空、截断 200 字、最多 10 条
+  function normalizeAltGreetings(list) {
+    if (!Array.isArray(list)) return [];
+    return list.map(function (s) {
+      return typeof s === 'string' ? s.trim() : '';
+    }).filter(function (s) {
+      return !!s;
+    }).map(function (s) {
+      return s.length > MAX_ALT_GREETING_LEN ? s.slice(0, MAX_ALT_GREETING_LEN) : s;
+    }).slice(0, MAX_ALT_GREETINGS);
+  }
+
+  // 给角色卡补 alternateGreetings（草稿恢复 / AI 返回可能缺这个字段）
+  function ensureAltGreetings(card) {
+    if (!card || typeof card !== 'object') return card;
+    card.alternateGreetings = normalizeAltGreetings(card.alternateGreetings);
+    return card;
   }
 
   function originOf(card, key) {
@@ -1205,6 +1237,7 @@
           state.versionIndex = i;
           // 用克隆回滚，避免之后的编辑改坏已保存的旧版本
           state.card = Kit.clone(ver.card);
+          ensureAltGreetings(state.card);
           state.meta = { providerId: ver.providerId || '', model: ver.model || '', at: ver.at || 0 };
           saveSoon();
           render();
@@ -1255,6 +1288,12 @@
       list.appendChild(previewFieldRow(card, def));
     });
     body.appendChild(list);
+
+    // 提示：问候语（首选/备选）在编辑页维护
+    body.appendChild(UI.el('div', {
+      class: 'ck-note',
+      text: '问候语（首选 + 备选）可以在保存后到「编辑角色」页维护，聊天页也能随时切换备选。'
+    }));
 
     body.appendChild(state.progressSlot);
     if (state.busy) {
@@ -1437,6 +1476,12 @@
         return;
       }
       var newCard = res.card;
+      // 改稿保留原有备选问候语（AI 输出里没有该字段）
+      var prevAlts = (state.card && Array.isArray(state.card.alternateGreetings)) ? state.card.alternateGreetings : [];
+      ensureAltGreetings(newCard);
+      if (!newCard.alternateGreetings.length && prevAlts.length) {
+        newCard.alternateGreetings = normalizeAltGreetings(prevAlts);
+      }
       state.card = newCard;
       state.meta = { providerId: guide.id, model: model, at: Date.now() };
       state.versions.push({
@@ -1493,6 +1538,7 @@
       catchphrases: card.catchphrases || '',
       scenario: card.scenario || '',
       firstMessage: card.firstMessage || '',
+      alternateGreetings: normalizeAltGreetings(card.alternateGreetings),
       exampleDialogues: Array.isArray(card.exampleDialogues) ? card.exampleDialogues : [],
       systemPrompt: card.systemPrompt || '',
       domain: card.domain || (state.type === 'assistant' ? state.domain : ''),

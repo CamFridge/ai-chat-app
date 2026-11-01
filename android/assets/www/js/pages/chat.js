@@ -1187,6 +1187,146 @@
         });
       }
 
+      /* ---------------- 问候语（首选 / 备选）：换个开场白（v1.2.0 契约 §2） ---------------- */
+      // 收集问候语：idx 0 = 首选 firstMessage，idx N = 第 N 条备选（忽略空串）
+      function greetingEntries() {
+        var card = st.character || {};
+        var list = [];
+        var first = String(card.firstMessage || '').trim();
+        if (first) list.push({ idx: 0, kind: '首选', text: first });
+        var alts = Array.isArray(card.alternateGreetings) ? card.alternateGreetings : [];
+        alts.forEach(function (raw, i) {
+          var text = String(raw || '').trim();
+          if (!text) return;
+          list.push({ idx: i + 1, kind: '备选 ' + (i + 1), text: text });
+        });
+        return list;
+      }
+
+      function findGreetingEntry(idx) {
+        var entries = greetingEntries();
+        for (var i = 0; i < entries.length; i++) {
+          if (entries[i].idx === idx) return entries[i];
+        }
+        return null;
+      }
+
+      function hasUserMessage() {
+        return (st.messages || []).some(function (m) { return m && m.role === 'user'; });
+      }
+
+      function firstAssistantMessage() {
+        var list = st.messages || [];
+        for (var i = 0; i < list.length; i++) {
+          if (list[i] && list[i].role === 'assistant' && !list[i].deleted) return list[i];
+        }
+        return null;
+      }
+
+      function openGreetingSheet() {
+        // 已经发过消息的会话不允许换开场白
+        if (hasUserMessage()) {
+          toast('已经聊起来了，不能换开场白', 'info');
+          return;
+        }
+        var entries = greetingEntries();
+        if (!entries.length) {
+          toast('这个角色还没有问候语', 'info');
+          return;
+        }
+        var current = Number(st.session && st.session.greetingIndex) || 0;
+        var items = entries.map(function (e) {
+          return {
+            id: String(e.idx),
+            value: String(e.idx),
+            label: e.kind + ' · ' + U.truncate(e.text, 24),
+            icon: 'chat'
+          };
+        });
+        if (items.length < 2) {
+          // 没有备选时给一条提示（点它不做任何事）
+          items.push({
+            id: '',
+            value: 'hint',
+            label: '这个角色还没有备选问候语',
+            desc: '可在「角色信息 → 编辑角色 → 问候语」里添加',
+            icon: 'info'
+          });
+        }
+        K.sheet({
+          title: '换个开场白',
+          items: items,
+          selected: String(current),
+          cancelText: '取消'
+        }).then(function (item) {
+          var act = K.itemId(item);
+          if (act === '') return;
+          var idx = Number(act);
+          if (!isNaN(idx)) return applyGreeting(idx);
+          return null;
+        }).catch(function (err) {
+          console.error('[chat] 更换开场白失败', err);
+          toast('更换开场白失败', 'error');
+        });
+      }
+
+      // 应用问候语：替换首条 assistant 消息（没有消息则插入），并写回 session.greetingIndex
+      function applyGreeting(idx) {
+        if (hasUserMessage()) { toast('已经聊起来了，不能换开场白', 'info'); return Promise.resolve(); }
+        var entry = findGreetingEntry(idx);
+        if (!entry) { toast('这条问候语不存在了', 'error'); return Promise.resolve(); }
+        var target = firstAssistantMessage();
+        var now = U.now();
+        var writeMsg;
+        if (target) {
+          target.content = entry.text;
+          target.status = 'ok';
+          target.errorText = '';
+          target.errorCode = '';
+          target.variants = [{ content: entry.text, createdAt: target.createdAt || now }];
+          target.variantIndex = 0;
+          target.isActive = true;
+          writeMsg = D.put('messages', target);
+        } else {
+          writeMsg = D.put('messages', {
+            sessionId: sessionId,
+            role: 'assistant',
+            content: entry.text,
+            variantIndex: 0,
+            isActive: true,
+            status: 'ok',
+            errorText: '',
+            tokensIn: 0,
+            tokensOut: 0,
+            createdAt: now
+          });
+        }
+        return writeMsg.then(function (saved) {
+          var patch = {
+            greetingIndex: entry.idx,
+            lastText: K.previewMessage(saved, 60),
+            lastRole: 'assistant',
+            lastAt: saved.createdAt || now,
+            updatedAt: now
+          };
+          st.session = Object.assign({}, st.session || {}, patch);
+          return D.put('sessions', st.session);
+        }).then(function () {
+          if (st.destroyed) return null;
+          return loadMessages().then(function () {
+            if (st.destroyed) return null;
+            renderMessagesInitial();
+            scrollToBottom(true);
+            markRead();
+            toast('已更换开场白', 'ok');
+            return null;
+          });
+        }).catch(function (err) {
+          console.error('[chat] 应用开场白失败', err);
+          toast('更换开场白失败', 'error');
+        });
+      }
+
       function findProvider(id) {
         var found = null;
         (st.providers || []).forEach(function (p) { if (!found && p.id === id) found = p; });
@@ -1355,6 +1495,7 @@
           items: [
             { id: 'rename', value: 'rename', label: '重命名会话', icon: 'edit' },
             { id: 'model', value: 'model', label: '切换模型 / API', icon: 'api' },
+            { id: 'greeting', value: 'greeting', label: '换个开场白', icon: 'chat' },
             { id: 'gen', value: 'gen', label: '生成设置（预设）', icon: 'settings' },
             { id: 'char', value: 'char', label: '角色信息', icon: 'character' },
             { id: 'clear', value: 'clear', label: '清空消息', icon: 'trash' },
@@ -1366,6 +1507,7 @@
           if (!act) return;
           if (act === 'rename') return renameSession();
           if (act === 'model') return openModelSheet();
+          if (act === 'greeting') return openGreetingSheet();
           if (act === 'gen') return openGenSettings();
           if (act === 'char') return openCharacterDrawer();
           if (act === 'clear') return clearMessages();
@@ -1805,6 +1947,56 @@
         }).catch(function (err) { console.error('[chat] 重新加载元数据失败', err); });
       }
 
+      /* ---------------- 角色主动消息：外部会话更新（v1.2.0 契约 §3.1） ---------------- */
+      // proactive.js 把主动消息落库后派发 aichat:session-updated，本页据此增量追加
+      function onExternalSessionUpdate(ev) {
+        if (st.destroyed) return;
+        var detail = (ev && ev.detail) || {};
+        if (!detail.sessionId || !st.session || detail.sessionId !== st.session.id) return;
+        // 正在生成时交给流式逻辑收尾，避免两条回复互相覆盖
+        if (st.streaming) return;
+        D.get('sessions', sessionId).then(function (s) {
+          if (st.destroyed || !s) return null;
+          st.session = s;
+          return loadMessages();
+        }).then(function () {
+          if (st.destroyed) return;
+          renderTopbar();
+          var nodes = listEl.querySelectorAll('.msg[data-id]');
+          if (!nodes.length) {
+            // 之前是空态：整体渲染
+            renderMessagesInitial();
+            scrollToBottom(true);
+            markRead();
+            return;
+          }
+          // 只追加「渲染窗口末尾之后」的新消息，避免把未渲染的历史消息一次性塞进 DOM
+          var lastRenderedId = nodes[nodes.length - 1].getAttribute('data-id');
+          var lastAt = -1;
+          for (var i = 0; i < st.messages.length; i++) {
+            if (st.messages[i].id === lastRenderedId) { lastAt = i; break; }
+          }
+          if (lastAt < 0) {
+            // 渲染窗口失效（消息被替换/删除），整体重绘
+            var wasBottom2 = atBottom();
+            renderMessagesInitial();
+            if (wasBottom2) scrollToBottom(true);
+            markRead();
+            return;
+          }
+          var tail = st.messages.slice(lastAt + 1);
+          if (tail.length) {
+            var wasBottom = atBottom();
+            tail.forEach(function (m) { appendMsgEl(m); });
+            if (wasBottom) scrollToBottom(true);
+          }
+          markRead();
+        }).catch(function (err) {
+          console.error('[chat] 刷新主动消息失败', err);
+        });
+      }
+      document.addEventListener('aichat:session-updated', onExternalSessionUpdate);
+
       st.unsubRoute = App.Router.onChange(function (cur) {
         if (st.destroyed || st.metaRefreshing) return;
         if (!root.isConnected) return;
@@ -1842,6 +2034,7 @@
         }
         K.setGenerating(sessionId, false);
         document.body.classList.remove('chat-input-focus');
+        document.removeEventListener('aichat:session-updated', onExternalSessionUpdate);
         closeDrawer();
         window.removeEventListener('online', onOnline);
         window.removeEventListener('offline', onOffline);

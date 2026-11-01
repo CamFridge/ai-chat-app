@@ -1103,3 +1103,148 @@
   .ck-gen-dot,
   .ck-gen-caret { animation: none; }
 }
+
+/* ============================================================
+ * 问候语弹窗（首选 + 备选问候语）
+ * ============================================================ */
+
+.ck-greet-modal {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  text-align: left;
+}
+
+.ck-greet-desc {
+  font-size: 13px;
+  line-height: 1.65;
+  color: var(--text-2);
+}
+
+.ck-greet-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.ck-greet-label {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.ck-greet-count {
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--text-3);
+}
+
+.ck-greet-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.ck-greet-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.ck-greet-item .ck-greet-ta {
+  flex: 1;
+  min-width: 0;
+}
+
+.ck-greet-ta {
+  width: 100%;
+  min-height: 84px;
+  box-sizing: border-box;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--card-2);
+  color: var(--text);
+  font-family: inherit;
+  font-size: 14px;
+  line-height: 1.6;
+  resize: none;
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+.ck-greet-item .ck-greet-ta {
+  min-height: 68px;
+}
+
+.ck-greet-ta:focus {
+  outline: none;
+  border-color: var(--brand);
+}
+
+.ck-greet-del {
+  flex: 0 0 44px;
+  width: 44px;
+  height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  background: var(--card-2);
+  color: var(--danger);
+  font-size: 22px;
+  line-height: 1;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.ck-greet-del:active {
+  background: var(--line);
+}
+
+.ck-greet-empty {
+  padding: 18px 14px;
+  border-radius: 8px;
+  background: var(--card-2);
+  font-size: 13px;
+  line-height: 1.7;
+  text-align: center;
+  color: var(--text-3);
+}
+
+.ck-greet-hint {
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--text-3);
+}
+
+.ck-greet-add {
+  min-height: 44px;
+}
+
+.ck-greet-add:disabled {
+  opacity: .5;
+}
+
+.ck-greet-foot {
+  display: flex;
+  gap: 8px;
+  padding-top: 2px;
+}
+
+.ck-greet-foot .btn {
+  flex: 1;
+  min-height: 44px;
+}
+
+@media (max-width: 360px) {
+  .ck-greet-modal { gap: 10px; }
+  .ck-greet-ta { min-height: 72px; font-size: 13px; }
+  .ck-greet-item .ck-greet-ta { min-height: 60px; }
+}

@@ -32,7 +32,10 @@
     help: 'settings_help',
     /* 设置页「图片库」说明、角色编辑页图片库入口（复用设置帮助会话） */
     media_help: 'settings_help',
-    character_images: 'settings_help'
+    character_images: 'settings_help',
+    /* 设置页「角色主动消息」入口、角色编辑页「问候语」入口（复用设置帮助会话） */
+    proactive_help: 'settings_help',
+    greetings_help: 'settings_help'
   };
   var SOURCE_LABEL = {
     guide_wizard: '创建向导',
@@ -44,7 +47,9 @@
     about: '关于页',
     help_page: '使用帮助页',
     media_help: '图片库帮助',
-    character_images: '角色图片库'
+    character_images: '角色图片库',
+    proactive_help: '主动消息帮助',
+    greetings_help: '问候语帮助'
   };
 
   var drawer = null;      // 当前打开的抽屉状态
@@ -447,6 +452,14 @@
       /* 图片库入口：换成更贴题的欢迎语与快捷问题 */
       desc = '图片只保存在本机。可以问我：怎么让角色发图片、怎么把图片加进角色图片库、支持哪些格式。';
       qs = ['怎么让角色给我发图片', '怎么把图片加进角色图片库', '上帝模式是什么'];
+    } else if (ctx && ctx.source === 'proactive_help') {
+      /* 设置页「角色主动消息」入口：只讲主动消息相关的事 */
+      desc = '主动消息默认关闭，开启后角色会在你空闲时主动来一句，每天最多 3 条。可以问我怎么开、怎么关、多久发一次。';
+      qs = ['角色会主动给我发消息吗', '怎么关闭主动消息', '多久发一次', '要开通知权限吗'];
+    } else if (ctx && ctx.source === 'greetings_help') {
+      /* 角色编辑页「问候语」入口 */
+      desc = '问候语是每次新会话的第一句话：可以设一条首选、最多 10 条备选。可以问我怎么设置、怎么换。';
+      qs = ['怎么换角色的开场白', '为什么换成备选后第一句变了', '备选问候语最多几条'];
     }
     box.appendChild(ui.el('div', { class: 'help-empty-desc', text: desc }));
     var chips = ui.el('div', { class: 'help-chips' });
