@@ -20,6 +20,14 @@
 
   var PAGE = 'characters';
 
+  /* 性别展示（characters.gender：female/male/other/''），老数据视为未设定 */
+  function genderText(v) {
+    if (v === 'female') return '女';
+    if (v === 'male') return '男';
+    if (v === 'other') return '其他';
+    return '';
+  }
+
   var state = {
     root: null,
     page: null,
@@ -186,7 +194,10 @@
     },
       UI.avatar(ch.name || '角', ch.avatar, 'md'),
       UI.el('div', { class: 'main ck-list-main' },
-        UI.el('div', { class: 'title ellipsis', text: ch.name || '未命名角色' }),
+        UI.el('div', { class: 'title ellipsis' },
+          UI.el('span', { text: ch.name || '未命名角色' }),
+          genderText(ch.gender) ? UI.el('span', { class: 'ck-gender-tag', text: genderText(ch.gender) }) : null
+        ),
         UI.el('div', { class: 'sub ck-sub-line' },
           UI.el('span', { class: 'ck-sub-text ellipsis', text: summary }),
           wvName ? UI.el('span', { class: 'ck-wv-mini', text: wvName }) : null
@@ -241,7 +252,7 @@
       timer = setTimeout(function () {
         longFired = true;
         if (typeof onLongPress === 'function') onLongPress();
-      }, 550);
+      }, 520);
     }, { passive: true });
 
     node.addEventListener('touchend', cancelTimer, { passive: true });
@@ -275,6 +286,7 @@
       title: ch.name || '角色操作',
       items: [
         { id: 'chat', label: '开始聊天', icon: 'chat' },
+        { id: 'images', label: '图片库', desc: '管理 TA 的图片，聊天时可发给你' },
         { id: 'edit', label: '编辑角色', icon: 'edit' },
         { id: 'copy', label: '复制角色', icon: 'copy' },
         { id: 'delete', label: '删除角色', icon: 'delete', danger: true }
@@ -282,6 +294,7 @@
     }).then(function (item) {
       if (!item) return null;
       if (item.id === 'chat') return startChat(ch);
+      if (item.id === 'images') return openImageLibrary(ch);
       if (item.id === 'edit') return editCharacter(ch);
       if (item.id === 'copy') return copyCharacter(ch);
       if (item.id === 'delete') return deleteCharacter(ch);
@@ -289,6 +302,35 @@
     }).catch(function (err) {
       console.error('[characters] 操作失败', err);
       UI.toast('操作失败：' + ((err && err.message) || '未知错误'), 'error');
+      return null;
+    });
+  }
+
+  // 打开某个角色的图片库（复用 character-edit.js 暴露的 App.ImageLibrary）
+  function openImageLibrary(ch) {
+    if (!ch || !ch.id) {
+      UI.toast('角色还没有保存，无法打开图片库', 'error');
+      return Promise.resolve(null);
+    }
+    var lib = App.ImageLibrary;
+    if (lib && typeof lib.open === 'function') {
+      return Promise.resolve(lib.open(ch.id)).catch(function (err) {
+        console.error('[characters] 打开图片库失败', err);
+        UI.toast('打开图片库失败：' + ((err && err.message) || '未知错误'), 'error');
+        return null;
+      });
+    }
+    // 兜底：图片库代码尚未加载时，先确认角色存在再提示
+    return DB.get('characters', ch.id).then(function (row) {
+      if (!row) {
+        UI.toast('角色不存在或已删除', 'error');
+        return null;
+      }
+      UI.toast('图片库暂时不可用，请稍后重试', 'error');
+      return null;
+    }).catch(function (err) {
+      console.error('[characters] 读取角色失败', err);
+      UI.toast('打开图片库失败', 'error');
       return null;
     });
   }

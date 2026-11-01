@@ -1252,3 +1252,169 @@ html[data-theme="amoled"] .help-drawer {
     padding: 0 12px;
   }
 }
+
+/* =========================================================================
+   引导助手 · 图片附件（选图 chip / 消息缩略图 / 加到角色图片库）
+   说明：颜色只用 base.css 变量，深浅色自适应；可点区域 ≥44px。
+   ========================================================================= */
+
+/* 输入条左侧「＋」：与 composer-send 同高对齐 */
+.help-attach {
+  flex: 0 0 auto;
+  width: 44px;
+  height: 44px;
+  margin-bottom: -3px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--card);
+  color: var(--text-2);
+  -webkit-tap-highlight-color: transparent;
+}
+.help-attach:active {
+  background: var(--card-2);
+  color: var(--brand);
+}
+.help-attach[disabled] { opacity: 0.5; }
+
+/* 输入框上方的附件 chip 条 */
+.help-attach-bar {
+  display: none;
+  flex: 0 0 auto;
+  padding: 8px 12px 2px;
+  background: var(--card);
+}
+.help-attach-bar.show { display: block; }
+.help-attach-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 100%;
+  padding: 4px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--card-2);
+}
+.help-attach-chip-thumb {
+  flex: 0 0 auto;
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  border: 0;
+  border-radius: 9px;
+  overflow: hidden;
+  background: var(--bg);
+}
+.help-attach-chip-thumb img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.help-attach-chip-name {
+  min-width: 0;
+  max-width: 42vw;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+  color: var(--text);
+}
+.help-attach-chip-x {
+  flex: 0 0 auto;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--text-3);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.help-attach-chip-x:active {
+  background: rgba(127, 127, 127, 0.18);
+  color: var(--danger);
+}
+
+/* 帮助消息里的图片缩略图（用户自己发的图） */
+.help-msg-imgs {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 6px;
+}
+.help-msg-imgs:first-child { margin-top: 0; }
+.help-msg-img {
+  display: block;
+  padding: 0;
+  border: 0;
+  border-radius: 10px;
+  overflow: hidden;
+  background: transparent;
+  line-height: 0;
+  -webkit-tap-highlight-color: transparent;
+}
+.help-msg-img img {
+  display: block;
+  max-width: 220px;
+  max-height: 220px;
+  border-radius: 10px;
+  object-fit: cover;
+}
+.msg.me .help-msg-img img { border: 1px solid rgba(255, 255, 255, 0.22); }
+
+/* 「加到角色图片库」卡片（assistant 侧，本地确定性能力） */
+.help-img-bubble {
+  padding: 10px 12px;
+  background: var(--card);
+  border: 1px solid var(--line);
+  color: var(--text);
+}
+.help-img-bubble-text {
+  font-size: 13.5px;
+  line-height: 1.6;
+  color: var(--text-2);
+}
+.help-img-action {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  width: 100%;
+  box-sizing: border-box;
+  min-height: 44px;
+  margin-top: 10px;
+  padding: 0 14px;
+  border: 1px solid color-mix(in srgb, var(--brand) 42%, var(--line));
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--brand) 10%, var(--card));
+  color: var(--brand);
+  font-size: 14px;
+  font-weight: 500;
+  -webkit-tap-highlight-color: transparent;
+}
+.help-img-action svg { flex: 0 0 auto; }
+.help-img-action:active { background: color-mix(in srgb, var(--brand) 18%, var(--card)); }
+.help-img-action[disabled] { opacity: 0.55; }
+
+/* 模型回答提到图片库时补的静态提示 */
+.help-img-tip {
+  margin-top: 8px;
+  font-size: 12.5px;
+  line-height: 1.55;
+  color: var(--text-2);
+}
+
+/* 暗色 / 纯黑主题：卡片边界更清楚一点 */
+html[data-theme='dark'] .help-img-bubble,
+html[data-theme='amoled'] .help-img-bubble {
+  background: var(--card-2);
+}
+html[data-theme='dark'] .help-attach,
+html[data-theme='amoled'] .help-attach {
+  background: var(--card-2);
+}

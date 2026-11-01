@@ -36,8 +36,8 @@ $env:PATH = (Join-Path $JavaHome 'bin') + ';' + $env:PATH
 $env:JAVA_HOME = $JavaHome
 
 $Build = Join-Path $Root 'build'
-$VersionCode = '6'
-$VersionName = '1.2.2'
+$VersionCode = '7'
+$VersionName = '1.3.0'
 $Gen = Join-Path $Build 'gen'
 $Classes = Join-Path $Build 'classes'
 $DexDir = Join-Path $Build 'dex'
@@ -162,3 +162,6 @@ Write-Host ("SHA256: " + $hash)
 Write-Host ("JDK   : " + $JavaHome)
 Write-Host ("SDK   : " + $Sdk)
 Write-Host '=========================================' -ForegroundColor Green
+
+
+

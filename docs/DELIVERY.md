@@ -6,7 +6,7 @@
 
 | 文件 | 说明 |
 | --- | --- |
-| `ai-chat-app/build/AI-Chat-1.1.1.apk` | 签名后的安装包（可直接安装） |
+| `ai-chat-app/build/AI-Chat-1.3.0.apk` | 签名后的安装包（可直接安装） |
 | `ai-chat-app/keystore/aichat-release.jks` | 签名密钥库（alias `aichat`，口令 `aichat2026`） |
 | `ai-chat-app/scripts/build.ps1` | 一键构建脚本（aapt2 → javac → d8 → zipalign → apksigner） |
 | `ai-chat-app/android/` | 原生壳源码 + 前端资源（`assets/www`） |
@@ -16,16 +16,56 @@
 
 **APK 指纹（最终正式构建）**
 
-- 大小：281,685 bytes（0.27 MB）
-- SHA-256：`978A9A1969BF04FA23720DE67BF6D4BDC04A7C41F0BA975C9FC93453E6DBF932`
-- 包名：`com.aichat.client`；版本：`1.1.1`（versionCode 3）
+- 大小：310,565 bytes（0.30 MB）
+- SHA-256：`367F070A550B9FE64B386379A642A6C824BF086273EB629F75DB89D88B733151`
+- 包名：`com.aichat.client`；版本：`1.3.0`（versionCode 7）
 - minSdk 26（Android 8.0）/ targetSdk 34 / compileSdk 34
 - 签名：APK Signature Scheme v2 + v3（minSdk 26 下 v1/JAR 签名非必需），`zipalign` 4 字节对齐校验通过
 - 证书：`CN=AI Chat, OU=Mobile, O=AiChat, L=Shenzhen, ST=Guangdong, C=CN`
 - 证书 SHA-256：`F4AAA0A8AC71DCA67AD95F290F106A44C12D694F8477305FB213828AB92D2590`
 - 发布版未开启 `android:debuggable`，WebView 调试端口只在调试构建中打开
 
-> 本版（1.1.1）沿用上一次重建后的签名密钥库（证书 SHA-256 不变），versionCode 升到 3；如果手机上装过 1.0.0 / 1.1.0，可直接覆盖升级（无需卸载）。工程此前被外部清理，已用 DSH 会话日志逐文件重放恢复并通过全部 E2E 回归；1.1.1 已完成构建与全量浏览器回归（设备端复验见 §5.1）。
+> 本版（1.3.0）继续使用同一签名密钥库（证书 SHA-256 不变），versionCode 升到 7；如果手机上装过旧版本，可直接覆盖升级（无需卸载）。v1.3.0 新增：自定义聊天外观（微信 / iMessage / QQ 三种气泡样式、聊天背景图、我的头像）、角色性别、每个角色单独开关上帝模式、角色图片库独立入口（可从角色列表打开）、聊天存档 / 读档 / 以存档开新对话；并修复世界观选择页滚动与点击卡顿、图片库「添加图片」按钮被 toast 遮挡点不动、弹窗/操作菜单不可见、连续操作时 toast 叠成一列等问题。
+
+### 1.7 本版新增功能（v1.3.0 · 聊天外观 / 性别 / 角色级上帝模式 / 独立图片库 / 存档）
+
+- **聊天界面样式**：设置 →「聊天界面 → 聊天界面样式」可选「微信 / iMessage / QQ」：微信保留头像与绿色气泡；iMessage 隐藏头像、对方白色大字气泡、自己蓝色气泡；QQ 为浅蓝气泡 + 小圆角。切换立即生效并持久化（`settings.chat_style`，body[data-chat-style]）。
+- **自定义聊天背景 / 我的头像**：设置 →「聊天界面」→「聊天背景」「我的头像」可从相册选图（dataURI，存 IndexedDB settings）。聊天页整页背景图 + 轻微蒙层保证文字可读，「我」的消息旁显示自定义头像；「恢复默认」可清空。深色 / AMOLED 下蒙层自动加深。
+- **角色性别**：创建角色 Step3 可选「女 / 男 / 其他 / 不设定」，编辑页可修改；列表显示性别小标签；性别会进入角色资料（`characters.gender`），AI 补全 / 改稿 / 草稿恢复都不会覆盖用户选择。
+- **每个角色单独开关上帝模式**：角色编辑页新增「上帝模式」开关（创建向导 Step3 也可开）。聊天时生效规则为「角色开关 || 全局开关」：全局一键全开，单个角色也可独立开；角色信息抽屉会显示只读状态。
+- **角色图片库独立入口**：角色列表行「⋯」→「图片库」可直接打开该角色的图片库（标题「角色图片库 · 角色名」），不需要先进入编辑页；编辑页入口保留。添加图片后会**自动关闭弹窗**并在 toast 显示「已添加 1 张…（共 N 张）」，添加中按钮禁用防重；删除角色时图片库级联清理。
+- **存档 / 读档 / 以存档开新对话**：聊天页会话菜单新增「存档」与「存档点」：
+  - **存档**：给当前会话拍快照（消息、角色、API/模型、预设、人设、开场白索引），可命名/备注；单会话最多 60 个、总量 300 个。
+  - **存档点**：列出本会话全部存档，可读档（把会话恢复到该快照，回滚消息与配置）、以存档开新对话（新建会话并复制该快照的消息与配置，便于「聊崩了重开」）、重命名、删除。
+  - 生成中禁止存档 / 读档；存档数据存 IndexedDB 新表 `saves`（数据库升级到 v3）。
+- **交互修复**：世界观选择页选中卡片不再整页重建（只原地更新选中态与摘要），长列表可正常滚动、点击不卡；``+ 添加图片``不再被 toast 挡住；弹窗 / 操作菜单恢复可见（入场动画选择器匹配）；连续操作时 toast 只显示最新一条，不再叠成一列。
+- **数据模型**：`characters.gender`、`characters.godMode`；settings：`chat_style` / `chat_bg` / `user_avatar`；IndexedDB 升级到 v3 并新增 `saves` 表（索引 sessionId / characterId）。
+- **E2E**：新增 `scripts/e2e-v130.js`（16 项：外观切换、背景/头像、聊天页样式、性别、角色级上帝模式进 prompt、独立图片库与添加后自动关闭）与 `scripts/e2e-saves.js`（7/7：快照/读档/新开对话/重命名/菜单入口）；原有 9 套 E2E 全部通过（audit / onboarding 26 / character 28 / chat 16 / greetings 26 / media 46 / proactive / guide / acceptance 32）。截图 `build/shots/{61-settings-chatui,99-saves-menu,100-settings-chatui,101-chat-imessage,102-chat-wechat-avatar,103-character-gender-god}.png`。
+- 纯前端改动（原生壳与权限未变）；签名密钥库不变（证书 SHA-256 仍为 `F4AAA0A8…`）。
+
+### 1.6 本版更新（v1.2.2 · 随机间隔可调上下限 + 到点决策 + 怎么走光标高亮）
+
+- **随机间隔改为 0~24 小时、上下限可调**：设置 →「角色主动消息」→「主动消息间隔」选择「随机间隔（0~24 小时，可调上下限）」后，会多出「随机间隔下限」「随机间隔上限」两行（0、0.5、1、2、3、4、6、8、12、18、24 小时可选；默认下限 1 小时、上限 8 小时）。每轮在上次聊天后的 [下限, 上限] 区间内重新随机，不会固定节奏；上限小于下限时自动纠正。
+- **到点先读上下文，再决定发不发**：间隔到点后，角色会带着当前会话上下文（最近消息、角色设定、世界观、图片库、上帝模式）让模型判断「现在适合主动发消息吗」——模型只返回 `{"send":true,"message":"…"}` 或 `{"send":false}`。返回 false 时不写入消息、不消耗当日 3 条配额，只更新时间戳；返回 true 才落库并触发未读/列表/toast/通知。兼容旧模型：模型直接返回纯文本时按「发送」处理；解析失败或空回复按失败节流，不会反复打扰。
+- **引导「怎么走」改为光标 + 高亮**：点击「怎么走」后不再只是步骤清单——面板打开即自动用黑色手型光标指向第一个可操作目标（输入框/按钮/Tab），目标同时加绿色高亮光环与提示标签（「在这里填写」「点这里」「已到「设置」」）。点步骤也会触发同样效果；navigate 步骤跳转后光标指向目标 Tab；面板关闭、切页或点击其它区域会自动清除光标。
+- **E2E 覆盖**：`scripts/e2e-proactive.js` 扩到 **43 项**（随机上下限写入/区间随机/后台排期/到点决策 send=false 不发、send=true 发送、纯文本兜底）；`scripts/e2e-guide.js` 扩到 **18 项**（自动光标、高亮目标、提示标签、跳转后标出目标 Tab）；`e2e-greetings` 26 项与原有 7 套 E2E 全部通过。截图 `97-settings-proactive-random.png`、`52-guide-focus.png`、`53-guide-navigate.png`。
+- 纯前端改动，不涉及原生代码与权限；签名密钥库不变（证书 SHA-256 仍为 `F4AAA0A8…`）。
+
+### 1.5 本版更新（v1.2.1 · 主动消息随机间隔）
+
+- **随机间隔**：设置 →「角色主动消息」→「主动消息间隔」新增「随机间隔（15~120 分钟）」。选中后，每轮在上次聊天之后随机等待 15–120 分钟再判定是否主动发消息，且每轮生成结束都会重新抽取，不会固定在同一时间点打扰。（v1.2.2 已把随机模式扩展为 0~24 小时可调上下限，见 §1.6；固定档位 15 / 30 / 60 / 120 分钟仍保留，默认 60。）
+- 随机模式下，前台判定与后台通知排期都使用「本轮实际间隔」（`App.Proactive.activeIntervalMin`）；设置行与状态文案显示「随机 N 分钟」。
+- **开场白可选为空**：聊天页会话菜单「换个开场白」新增「不使用开场白（空对话）」；选中后会话从空白开始（删除尚未聊天时的开场白消息，`sessions.greetingIndex = -1`），之后可随时再切回首选/备选。角色首选与备选都为空时，新会话也直接以空对话开始。
+- 纯前端改动，不涉及原生代码与权限；签名密钥库不变（证书 SHA-256 仍为 `F4AAA0A8…`）。
+- E2E：`scripts/e2e-proactive.js` 从 18 项扩到 26 项（v1.2.2 起进一步扩到 43 项，见 §1.6）；`scripts/e2e-greetings.js` 从 20 项扩到 **26 项**（新增空对话选项、空对话状态、切回首选），两者与原有 7 套 E2E 全部通过。
+
+### 1.4 本版新增功能（v1.2.0 · 角色主动消息 + 问候语）
+
+- **角色主动消息**：设置 →「角色主动消息」分组可开关（默认关闭），并选择间隔（15 / 30 / 60 / 120 分钟，默认 60）。开启后，距上次聊天超过间隔时角色可能主动发来一条消息：前台由 30 秒轮询 + 页面回到前台补查触发，生成结果写入会话（未读数 +1，列表显示「X 发来一条消息」toast）；切到后台/锁屏时用系统通知提醒（AlarmManager setAndAllowWhileIdle，每天最多 3 条）。
+- **问候语（首选 + 备选）**：角色编辑页新增「问候语」入口：首选问候语（新建会话默认开场白）+ 最多 10 条备选（每条 ≤200 字）；自 v1.2.1 起也可在聊天页选择「不使用开场白（空对话）」。聊天页会话菜单新增「换个开场白」：在会话还没有用户消息时可随时换成任意首选/备选；首选为空时新会话自动退回第一条备选。创建角色流程（AI 补全、草稿恢复、改稿、保存）完整保留备选问候语。
+- **通知权限**：Android 13+ 首次使用主动消息时申请通知权限；未授权只影响锁屏/后台提醒，前台主动消息照常。
+- **数据模型**：characters.alternateGreetings: string[]、sessions.greetingIndex；settings 新增 proactive_enabled / proactive_interval_min / proactive_last_at / proactive_day / proactive_day_count。数据库无需升级表结构（IndexedDB 仍是 v2）。
+- 新增 E2E：scripts/e2e-proactive.js（18 项；v1.2.2 起扩到 43 项，见 §1.6）与 scripts/e2e-greetings.js（20 项；v1.2.1 起 26 项）全部通过；原有 E2E（audit / onboarding 26 / character 28 / chat 16 / guide 18 / media 46 / acceptance 32）全部通过。
 
 ### 1.3 本版修复（v1.1.1 · 针对「一卡一卡 / 点好几遍没反应」）
 
@@ -61,7 +101,7 @@
 
 ```powershell
 # USB 调试已开启时
-adb install -r ai-chat-app\build\AI-Chat-1.1.0.apk
+adb install -r ai-chat-app\build\AI-Chat-1.3.0.apk
 
 # 或把 APK 传到手机，在文件管理器里点击安装（允许「安装未知来源应用」）
 ```
@@ -74,7 +114,7 @@ adb install -r ai-chat-app\build\AI-Chat-1.1.0.apk
 - **前端**：纯 HTML/CSS/vanilla JS，零第三方依赖，微信式 4 Tab + 二级页栈。
 - **网络**：全部经 Java 桥（`HttpURLConnection` + SSE 逐行解析），不走 WebView fetch，规避 CORS；流式输出通过 `window.__nativeEvent` 回传。
 - **Key 安全**：AndroidKeyStore（AES-256-GCM）加密后存 SharedPreferences；Key 不写 IndexedDB、不进入导出备份、不出现在气泡上下文中。
-- **数据**：IndexedDB（11 张表：providers/worldviews/characters/characterImages/personas/presets/sessions/messages/helpSessions/helpMessages/settings）。角色图片以 data URI 存储（单张压缩后 ≤320px，单角色 ≤60 张），聊天附件随消息保存在 `messages.attachments`，不写入导出备份以外的任何外部位置。
+- **数据**：IndexedDB（12 张表：providers/worldviews/characters/characterImages/personas/presets/sessions/messages/helpSessions/helpMessages/settings/saves）。角色图片以 data URI 存储（单张压缩后 ≤320px，单角色 ≤60 张），聊天附件随消息保存在 `messages.attachments`；聊天存档（v1.3.0）保存消息与配置快照到 `saves` 表。
 - **构建**：不依赖 Gradle，`scripts/build.ps1` 手工串 aapt2/javac/d8/zipalign/apksigner，结果确定、可离线复现。
 
 ## 4. 功能清单（对应需求 §十一 验收标准）
@@ -111,7 +151,7 @@ adb install -r ai-chat-app\build\AI-Chat-1.1.0.apk
 
 ## 5. 验证结果
 
-在 Chrome 155 无头实例（390×844 @2x，移动端 UA）上，连本地静态服务器逐项跑通：
+在无头 Chrome 实例（390×844 @2x，移动端 UA）上，连本地静态服务器逐项跑通：
 
 | 脚本 | 覆盖 | 结果 |
 | --- | --- | --- |
@@ -126,6 +166,10 @@ adb install -r ai-chat-app\build\AI-Chat-1.1.0.apk
 截图位于 `ai-chat-app/build/shots/`（浅色/暗色/AMOLED、聊天/角色/引导气泡/错误帮助等）。
 
 ### 5.1 Android 设备端验证（API 33 / Android 13 模拟器）
+
+> **v1.2.2 验证说明**：v1.2.2 仅改动前端（随机间隔上下限、到点决策、引导光标）与引导样式，已通过浏览器 E2E（`e2e-proactive` 43 项、`e2e-guide` 18 项）与全量回归验证，未再启动模拟器。
+>
+> **v1.2.0 设备端验证说明**：本版新增的原生通知代码（POST_NOTIFICATIONS、`ProactiveReceiver`、AlarmManager 排期）已随构建产物做静态校验（`aapt2 dump badging` 含权限、`aapt2 dump xmltree` 含 receiver、`zipalign`/`apksigner` 通过），主动消息的业务逻辑由浏览器 E2E（`e2e-proactive` 18 项、`e2e-greetings` 20 项）覆盖。按用户要求避免再次占用大量内存启动模拟器，本版未重复设备端自动化验证；建议真机首次开启「角色主动消息」时确认系统通知权限弹窗，若通知未出现请在系统设置中允许通知。
 
 > **复验状态**：本版（1.1.1）构建已在 Windows 本机的 Android 13（API 33，x86_64）模拟器上完成安装、启动与设备端自动化验证（AEHD 2.2 加速驱动经用户授权后安装，emulator 37.2.13 + `system-images;android-33;google_apis;x86_64`）。设备端验证覆盖原生桥、Key 加密、流式回复、气泡、主题与返回键，并额外专项验证「null 修复」、v1.1.0 新增功能与 v1.1.1 流畅度修复（触摸 Tab 切换与「流式中点停止」响应）。
 
@@ -142,6 +186,8 @@ adb install -r ai-chat-app\build\AI-Chat-1.1.0.apk
 设备截图位于 `ai-chat-app/build/device/`：`10-main-chat-list.png`、`11-chat.png`、`12-chat-reply.png`（mock SSE 流式回复「你好，这是设备端测试回复。」，含 8 tokens 用量）、`13-bubble-fan.png`、`14-chat-dark.png`、`15-settings-area.png`、`20-null-regression.png`、`21-media-god.png`（v1.1.0：角色斜体动作 + 角色发图 + 图片名）、`result.json`。设备测试用 mock SSE 服务通过 `adb reverse tcp:8899 tcp:8899` 暴露到设备 `127.0.0.1:8899`（脚本：`scripts/mock-sse-server.js`、`scripts/device-e2e.js`、`scripts/device-null.js`、`scripts/device-media-smoke.js`）。
 
 > 说明：个别模拟器 ROM（本次 JellyDroid API33 镜像）的 AssetManager 对 `assets/` 子目录返回反斜杠路径，`serveAsset` 已内置 `/`→`\` 双分隔符兜底并在该镜像上验证；标准 Android 设备走正常正斜杠路径，不受影响。
+
+> **v1.3.0 验证说明**：v1.3.0 为纯前端改动（聊天外观、性别、角色级上帝模式、独立图片库、存档、世界观滚动修复），原生壳与权限未变，未再次启动高内存 Android 模拟器；已通过 11 个浏览器 E2E 脚本串行全量回归（含新增 `e2e-v130` 16 项与 `e2e-saves` 7 项），并对发布包做签名 / 对齐 / badging / assets 完整性校验。
 
 ### 5.2 「一串 null」修复的验证方式
 
@@ -169,16 +215,19 @@ cd ai-chat-app
 pwsh -NoProfile -ExecutionPolicy Bypass -File scripts\build.ps1 -Clean
 ```
 
-要求：JDK 17+、`tools/android-sdk`（build-tools 34.0.0 + platform android-34，可用 `scripts/setup-sdk.ps1` 安装）。密钥库已存在则复用，不会覆盖。输出 `build/AI-Chat-1.0.0.apk`。
+要求：JDK 17+、`tools/android-sdk`（build-tools 34.0.0 + platform android-34，可用 `scripts/setup-sdk.ps1` 安装）。密钥库已存在则复用，不会覆盖。输出 `build/AI-Chat-1.3.0.apk`。
 
 调试构建（开启 `android:debuggable` 与 WebView DevTools，便于 `scripts/device-e2e.js` 联调）：
 
 ```powershell
 pwsh -NoProfile -ExecutionPolicy Bypass -File scripts\build.ps1 -DebugMode
-# 输出 build/AI-Chat-1.0.0-debug.apk
-adb install -r build\AI-Chat-1.0.0-debug.apk
+# 输出 build/AI-Chat-1.3.0-debug.apk
+adb install -r build\AI-Chat-1.3.0-debug.apk
 adb forward tcp:9333 localabstract:webview_devtools_remote_<app pid>
 node scripts\device-e2e.js 9333
 ```
 
 设备端返回键验证：`node scripts\device-back-test.js 9333 push` → `adb shell input keyevent 4` → `node scripts\device-back-test.js 9333 check`。
+
+
+

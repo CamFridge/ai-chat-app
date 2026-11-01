@@ -926,3 +926,438 @@
     flex: 1 1 100%;
   }
 }
+
+/* =========================================================
+   四、图片库 / 附件 / 动作斜体（第二轮迭代，契约 §4）
+   ========================================================= */
+
+/* ---------- 4.1 动作、神态斜体（*动作*） ---------- */
+.msg-bubble .md-action {
+  font-style: italic;
+  font-weight: 300;
+  color: var(--text-2);
+  font-size: .97em;
+}
+
+/* ---------- 4.2 输入栏「＋」附件按钮（点击区 ≥ 44px） ---------- */
+.chat-page .composer-attach {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  margin: 0 0 -3px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--text-2);
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.chat-page .composer-attach svg {
+  width: 22px;
+  height: 22px;
+}
+.chat-page .composer-attach:active {
+  background: var(--card-2);
+}
+.chat-page .composer-attach.disabled {
+  opacity: .4;
+  pointer-events: none;
+}
+
+/* ---------- 4.3 待发送附件 chip（输入框上方） ---------- */
+.chat-page .composer-input-col {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 6px;
+}
+.chat-page .composer-attach-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.chat-page .composer-attach-chips.hidden {
+  display: none;
+}
+.chat-page .composer-attach-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  padding: 4px 6px 4px 4px;
+  border-radius: 8px;
+  background: var(--card-2);
+  font-size: 12px;
+  color: var(--text-2);
+}
+.chat-page .composer-attach-thumb {
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  object-fit: cover;
+  flex: 0 0 auto;
+}
+.chat-page .composer-attach-fileicon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  flex: 0 0 auto;
+  color: var(--text-2);
+}
+.chat-page .composer-attach-fileicon svg {
+  width: 18px;
+  height: 18px;
+}
+.chat-page .composer-attach-name {
+  min-width: 0;
+  max-width: 150px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.chat-page .composer-attach-remove {
+  flex: 0 0 auto;
+  width: 26px;
+  height: 26px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--text-3);
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+}
+.chat-page .composer-attach-remove:active {
+  background: rgba(127, 127, 127, .16);
+}
+
+/* ---------- 4.4 用户发出的图片 / 文件 ---------- */
+.chat-page .msg-attach-img {
+  display: block;
+  max-width: 220px;
+  max-height: 220px;
+  margin-top: 4px;
+  border-radius: 8px;
+  object-fit: cover;
+  cursor: zoom-in;
+  -webkit-tap-highlight-color: transparent;
+}
+.chat-page .msg-bubble.attach-only {
+  padding: 4px;
+  background: transparent;
+  box-shadow: none;
+}
+.chat-page .msg-bubble.attach-only::before {
+  display: none;
+}
+.chat-page .msg-bubble.attach-only .msg-attach-img {
+  margin-top: 0;
+}
+.chat-page .msg-attach-file {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  max-width: 240px;
+  margin-top: 6px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: rgba(127, 127, 127, .12);
+  cursor: pointer;
+  text-align: left;
+  -webkit-tap-highlight-color: transparent;
+}
+.chat-page .msg-attach-file:active {
+  background: rgba(127, 127, 127, .2);
+}
+.chat-page .msg-attach-file-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  color: var(--text-2);
+}
+.chat-page .msg-attach-file-icon svg {
+  width: 20px;
+  height: 20px;
+}
+.chat-page .msg-attach-file-main {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.chat-page .msg-attach-file-name {
+  font-size: 13px;
+  line-height: 1.3;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.chat-page .msg-attach-file-size {
+  font-size: 11px;
+  line-height: 1.3;
+  color: var(--text-3);
+}
+
+/* ---------- 4.5 角色发来的图片（[[img:ID]]） ---------- */
+.chat-page .msg-bubble .md-part + .md-part {
+  margin-top: 6px;
+}
+.chat-page .msg-bubble .msg-image + .md-part,
+.chat-page .msg-bubble .md-part + .msg-image {
+  margin-top: 6px;
+}
+.chat-page .msg-image {
+  max-width: 220px;
+  margin-top: 6px;
+}
+.chat-page .msg-image-img {
+  display: block;
+  max-width: 100%;
+  max-height: 220px;
+  border-radius: 8px;
+  object-fit: cover;
+  cursor: zoom-in;
+  -webkit-tap-highlight-color: transparent;
+}
+.chat-page .msg-image-name {
+  margin-top: 2px;
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--text-3);
+}
+.chat-page .msg-image-loading {
+  padding: 14px 16px;
+  border-radius: 8px;
+  background: rgba(127, 127, 127, .1);
+  font-size: 12px;
+  color: var(--text-3);
+}
+.chat-page .msg-image-missing {
+  padding: 10px 12px;
+  border: 1px dashed var(--line-strong);
+  border-radius: 8px;
+  font-size: 12px;
+  color: var(--text-3);
+}
+.chat-page .msg-image-full {
+  display: block;
+  max-width: 100%;
+  max-height: 60vh;
+  margin: 0 auto;
+  border-radius: 8px;
+}
+
+/* ---------- 4.6 文件内容弹窗、图片预览 ---------- */
+.chat-page .msg-file-modal {
+  text-align: left;
+}
+.chat-page .msg-file-meta {
+  margin-bottom: 6px;
+  font-size: 12px;
+  color: var(--text-3);
+}
+.chat-page .msg-file-text {
+  max-height: 44vh;
+  margin: 0;
+  padding: 10px;
+  overflow: auto;
+  border-radius: 8px;
+  background: var(--card-2);
+  font-family: var(--mono);
+  font-size: 12.5px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: var(--text);
+}
+
+/* ---------- 4.7 深色/AMOLED 微调 ---------- */
+html[data-theme="dark"] .chat-page .msg-attach-file,
+html[data-theme="amoled"] .chat-page .msg-attach-file {
+  background: rgba(255, 255, 255, .08);
+}
+html[data-theme="dark"] .chat-page .msg-image-loading,
+html[data-theme="amoled"] .chat-page .msg-image-loading {
+  background: rgba(255, 255, 255, .08);
+}
+html[data-theme="amoled"] .chat-page .msg-bubble.attach-only {
+  background: transparent;
+}
+
+/* 窄屏：附件卡片与图片缩到 180px，避免撑破气泡 */
+@media (max-width: 359px) {
+  .chat-page .msg-attach-img,
+  .chat-page .msg-image-img {
+    max-width: 180px;
+    max-height: 180px;
+  }
+  .chat-page .msg-attach-file {
+    max-width: 200px;
+  }
+}
+
+/* ==========================================================================
+   五、v1.2.0 问候语（首选 / 备选）：换个开场白面板
+   —— 面板由 App.UI.sheet 渲染（挂在 #overlay-root 下，不在 .chat-page 内），
+      这里只补「当前选中项」对勾的尺寸/颜色与长文本换行，暗色沿用变量。
+   ========================================================================== */
+.sheet-item .side {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  color: var(--brand);
+}
+.sheet-item .side svg {
+  width: 20px;
+  height: 20px;
+}
+/* 问候语可能较长：允许标签换行，不撑破弹层 */
+.sheet-item .grow > span:first-child {
+  word-break: break-word;
+  line-height: 1.4;
+}
+
+
+/* ============================================================
+ * v1.3.0 聊天外观：自定义背景 / iMessage / QQ 皮肤
+ * ============================================================ */
+.chat-page.has-chat-bg,
+body.has-chat-bg .chat-page {
+  background-image: var(--chat-bg-image, none);
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+}
+body.has-chat-bg .chat-msg-list,
+body.has-chat-bg .chat-wrap,
+body.has-chat-bg .msg-list {
+  background: transparent;
+}
+
+/* iMessage：蓝色自己 / 浅色对方，无头像，大圆角 */
+body[data-chat-style="imessage"] .chat-page .msg-avatar { display: none; }
+body[data-chat-style="imessage"] .chat-page .msg { max-width: 100%; }
+body[data-chat-style="imessage"] .chat-page .msg-bubble {
+  border-radius: 18px;
+  font-size: 15px;
+  line-height: 1.45;
+}
+body[data-chat-style="imessage"] .chat-page .msg.me .msg-bubble {
+  background: #0b84fe;
+  color: #ffffff;
+  box-shadow: 0 1px 1px rgba(0, 0, 0, 0.08);
+}
+body[data-chat-style="imessage"] .chat-page .msg.ai .msg-bubble {
+  background: var(--card);
+  color: var(--text);
+  box-shadow: 0 1px 1px rgba(0, 0, 0, 0.08);
+}
+body[data-chat-style="imessage"] .chat-page .msg.me .msg-bubble a { color: #eaf3ff; }
+body[data-chat-style="imessage"] .chat-page .msg-meta { opacity: 0.6; }
+
+/* QQ：蓝色气泡 + 小圆角 + 方形头像 */
+body[data-chat-style="qq"] .chat-page .msg-bubble {
+  border-radius: 10px;
+}
+body[data-chat-style="qq"] .chat-page .msg.me .msg-bubble {
+  background: #12b7f5;
+  color: #ffffff;
+}
+body[data-chat-style="qq"] .chat-page .msg-avatar {
+  border-radius: 9px;
+}
+body[data-chat-style="qq"] .chat-page .msg.me .msg-avatar {
+  background: #12b7f5;
+}
+body[data-chat-style="qq"] .chat-page .msg.me .msg-bubble a { color: #eaf9ff; }
+
+/* 深色模式下保持气泡可读 */
+[data-theme="dark"] body[data-chat-style="imessage"] .chat-page .msg.ai .msg-bubble,
+[data-theme="amoled"] body[data-chat-style="imessage"] .chat-page .msg.ai .msg-bubble {
+  background: var(--card-2);
+  color: var(--text);
+}
+
+/* ============================================================
+ * v1.3.0 补充（feat-chat）：自定义聊天背景下的可读性蒙层 + 半透明栏
+ * —— 只做叠加，不改上面皮肤（imessage / qq）的规则。
+ * ============================================================ */
+
+/* 很淡的蒙层，保证背景图上的文字可读；不拦截点击 */
+body.has-chat-bg .chat-page .chat-wrap { position: relative; }
+body.has-chat-bg .chat-page .chat-wrap::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: #ffffff;
+  opacity: 0.18;
+  pointer-events: none;
+  z-index: 0;
+}
+html[data-theme="dark"] body.has-chat-bg .chat-page .chat-wrap::before,
+html[data-theme="amoled"] body.has-chat-bg .chat-page .chat-wrap::before {
+  background: #000000;
+  opacity: 0.28;
+}
+/* 内容层压在蒙层之上 */
+body.has-chat-bg .chat-page .chat-wrap > * {
+  position: relative;
+  z-index: 1;
+}
+
+/* 背景图上有颜色变化时，时间/状态文字加一点描边，避免看不清 */
+body.has-chat-bg .chat-page .msg-meta {
+  color: rgba(0, 0, 0, 0.52);
+  text-shadow: 0 1px 2px rgba(255, 255, 255, 0.55);
+}
+html[data-theme="dark"] body.has-chat-bg .chat-page .msg-meta,
+html[data-theme="amoled"] body.has-chat-bg .chat-page .msg-meta {
+  color: rgba(255, 255, 255, 0.62);
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.65);
+}
+body.has-chat-bg .chat-page .day-divider {
+  background: rgba(0, 0, 0, 0.35);
+}
+
+/* 顶栏 / 输入栏改半透明，避免整块不透明色把背景图挡死 */
+body.has-chat-bg .chat-page .chat-topbar {
+  background: rgba(237, 237, 237, 0.72);
+}
+html[data-theme="dark"] body.has-chat-bg .chat-page .chat-topbar,
+html[data-theme="amoled"] body.has-chat-bg .chat-page .chat-topbar {
+  background: rgba(20, 20, 22, 0.6);
+}
+body.has-chat-bg .chat-page .composer {
+  background: rgba(237, 237, 237, 0.78);
+}
+html[data-theme="dark"] body.has-chat-bg .chat-page .composer,
+html[data-theme="amoled"] body.has-chat-bg .chat-page .composer {
+  background: rgba(20, 20, 22, 0.66);
+}
+body.has-chat-bg .chat-page .composer-input-wrap {
+  background: rgba(255, 255, 255, 0.86);
+}
+html[data-theme="dark"] body.has-chat-bg .chat-page .composer-input-wrap,
+html[data-theme="amoled"] body.has-chat-bg .chat-page .composer-input-wrap {
+  background: rgba(36, 36, 38, 0.85);
+}
+
+/* 「我」的头像（v1.3.0）：data URI 图片头像的兜底样式 */
+.chat-page .msg.me .msg-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}

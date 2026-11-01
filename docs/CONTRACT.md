@@ -221,6 +221,18 @@ page.guide({
 4. 不要 `alert/prompt/confirm`；用 `UI.*`。
 5. 不确定接口先读本契约；再不确定找 Lead，不要臆造。
 
+## 14. 本次迭代（图片库 / 附件 / 动作斜体 / 上帝模式）
+
+详细契约见 `docs/FEATURE-media-god.md`。此处只列与其他模块相关的硬性约定：
+
+- DB 版本升至 2，新增表 `characterImages`（keyPath `id`，index `characterId`）：`{id, characterId, kind:'image', name, caption, mime, dataUri, size, source:'user'|'guide', createdAt}`。导出备份会自动包含该表。
+- 消息附件字段：`messages.attachments = [{kind:'image'|'file', name, mime, size, dataUri?, text?, truncated?}]`，本期每条消息最多 1 个。
+- settings 新键：`god_mode:boolean`（默认 false）。
+- 新全局模块 `App.Media`（`js/media.js`，加载顺序在 db.js 之后）：`pickImage/pickFile/addImage/list/get/update/remove/removeByCharacter/count/promptBlock/preview/fileSizeText`，接口与限制见功能契约 §2。
+- 系统提示词图片库规则：`App.Media.promptBlock(images)` 返回整段文本（含 `[[img:ID]]` 规则），`K.buildSystemPrompt` 直接追加；回复中 `[[img:<id>]]` 由聊天页渲染成图片。
+- 表达格式：动作/神态用 `*星号*`，`K.md` 渲染为 `<em class="md-action">`；人物说的话用正文。
+- 删除角色时由 `characters.js` 调 `App.Media.removeByCharacter` 级联清理图片库。
+
 ## 15. v1.2.0 迭代（主动消息 + 问候语）
 
 > 完整契约见 `docs/FEATURE-proactive-greetings.md`（实现前必读）。要点：

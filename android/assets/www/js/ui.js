@@ -276,6 +276,8 @@
       toastWrap = UI.el('div', { class: 'toast-wrap' });
       document.body.appendChild(toastWrap);
     }
+    // 同时只显示一条 toast：新提示直接替换旧提示，避免连续操作时叠成一列盖住界面
+    while (toastWrap.firstChild) toastWrap.removeChild(toastWrap.firstChild);
     var t = UI.el('div', { class: 'toast' + (type === 'error' ? ' err' : type === 'ok' ? ' ok' : ''), text: String(text) });
     toastWrap.appendChild(t);
     var ms = duration || (type === 'error' ? 3200 : 2000);

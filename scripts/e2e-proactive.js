@@ -235,20 +235,23 @@ async function waitFor(page, expr, timeoutMs = 10000, intervalMs = 120) {
     else bad('设置页开关写入异常：' + switchOk);
   } else bad('设置页开关测试返回异常：' + switchOk);
 
-  // ---------- 8. 随机间隔 ----------
-  await page.eval(`(async () => {
-    await App.Router.tab('settings');
-    await new Promise(r => setTimeout(r, 700));
-    const cells = Array.from(document.querySelectorAll('.cell'));
-    const row = cells.find(c => (c.textContent || '').indexOf('主动消息间隔') >= 0);
-    if (row) row.click();
-    return true;
-  })()`);
-  await sleep(700);
+  // ---------- 8. 随机间隔（0~24 小时，可调上下限） ----------
+  async function pickIntervalOption() {
+    await page.eval(`(async () => {
+      await App.Router.tab('settings');
+      await new Promise(r => setTimeout(r, 700));
+      const row = Array.from(document.querySelectorAll('.cell')).find(c => (c.textContent || '').indexOf('主动消息间隔') >= 0);
+      if (row) row.click();
+      return true;
+    })()`);
+    await sleep(700);
+  }
+
+  await pickIntervalOption();
   const sheetText = await page.eval(`JSON.stringify(Array.from(document.querySelectorAll('.sheet-item')).map(e => (e.textContent || '').trim()))`);
   let labels = [];
   try { labels = JSON.parse(sheetText); } catch (e) { labels = []; }
-  if (labels.some((l) => l.indexOf('随机间隔') >= 0)) ok('间隔选项含「随机间隔（15~120 分钟）」');
+  if (labels.some((l) => l.indexOf('随机间隔') >= 0)) ok('间隔选项含「随机间隔（0~24 小时，可调上下限）」');
   else bad('间隔选项缺少随机项：' + sheetText);
 
   await page.eval(`(() => {
@@ -263,13 +266,15 @@ async function waitFor(page, expr, timeoutMs = 10000, intervalMs = 120) {
     rand = JSON.parse(await page.eval(`(async () => {
       const val = await App.DB.settings.get('proactive_interval_min', null);
       const st = App.Proactive.status();
-      return JSON.stringify({ val: val, intervalMin: st.intervalMin, random: st.random, active: st.activeIntervalMin, text: App.Proactive.statusText() });
+      return JSON.stringify({ val: val, intervalMin: st.intervalMin, random: st.random, active: st.activeIntervalMin, min: st.randomMin, max: st.randomMax, text: App.Proactive.statusText() });
     })()`));
   } catch (e) { rand = null; }
   if (rand && rand.val === 0 && rand.random === true && rand.intervalMin === 0) ok('随机模式已写入（proactive_interval_min=0）');
   else bad('随机模式写入异常：' + JSON.stringify(rand));
-  if (rand && rand.active >= 15 && rand.active <= 120) ok('本轮随机间隔在 15~120 分钟之间：' + rand.active + ' 分钟');
-  else bad('随机间隔超出范围：' + (rand && rand.active));
+  if (rand && rand.min === 60 && rand.max === 480) ok('随机间隔默认上下限为 60~480 分钟');
+  else bad('随机间隔默认上下限异常：' + JSON.stringify(rand));
+  if (rand && rand.active >= 60 && rand.active <= 480) ok('本轮随机间隔落在默认上下限内：' + rand.active + ' 分钟');
+  else bad('随机间隔超出默认范围：' + (rand && rand.active));
   if (rand && /随机/.test(rand.text)) ok('状态文案显示随机：' + rand.text);
   else bad('状态文案未显示随机：' + (rand && rand.text));
 
@@ -280,12 +285,67 @@ async function waitFor(page, expr, timeoutMs = 10000, intervalMs = 120) {
   })()`);
   let rollArr = [];
   try { rollArr = JSON.parse(rolls); } catch (e) { rollArr = []; }
-  const inRange = rollArr.length >= 10 && rollArr.every((n) => Number(n) >= 15 && Number(n) <= 120);
+  const inRange = rollArr.length >= 10 && rollArr.every((n) => Number(n) >= 60 && Number(n) <= 480);
   const distinct = new Set(rollArr.map((n) => Number(n))).size;
-  if (inRange) ok('连续抽取 12 次均落在 15~120 分钟');
+  if (inRange) ok('连续抽取 12 次均落在 60~480 分钟');
   else bad('随机抽取越界：' + rolls);
   if (distinct >= 2) ok('随机间隔不是固定值（12 次抽取得到 ' + distinct + ' 个不同值）');
   else bad('随机间隔看起来是固定值：' + rolls);
+
+  // 通过设置页把上下限改成 2 小时 / 3 小时
+  async function pickBound(whichText, optionText) {
+    const rowLabel = '随机间隔' + whichText;
+    await page.eval(`(async () => {
+      await App.Router.tab('settings');
+      await new Promise(r => setTimeout(r, 600));
+      const row = Array.from(document.querySelectorAll('.cell')).find(c => (c.textContent || '').indexOf(${JSON.stringify(rowLabel)}) >= 0);
+      if (row) row.click();
+      return true;
+    })()`);
+    await sleep(700);
+    const picked = await page.eval(`(() => {
+      const items = Array.from(document.querySelectorAll('.sheet-item'));
+      const it = items.find(e => (e.textContent || '').trim().indexOf(${JSON.stringify(optionText)}) === 0);
+      if (it) { it.click(); return 'ok'; }
+      return 'missing:' + items.map(e => (e.textContent || '').trim()).join('|');
+    })()`);
+    await sleep(800);
+    return picked;
+  }
+
+  const pickMin = await pickBound('下限', '2 小时');
+  if (pickMin === 'ok') ok('设置随机间隔下限为 2 小时');
+  else bad('设置下限失败：' + pickMin);
+  const pickMax = await pickBound('上限', '3 小时');
+  if (pickMax === 'ok') ok('设置随机间隔上限为 3 小时');
+  else bad('设置上限失败：' + pickMax);
+
+  let bounds = null;
+  try {
+    bounds = JSON.parse(await page.eval(`(async () => {
+      const lo = await App.DB.settings.get('proactive_random_min', null);
+      const hi = await App.DB.settings.get('proactive_random_max', null);
+      const st = App.Proactive.status();
+      return JSON.stringify({ lo: lo, hi: hi, min: st.randomMin, max: st.randomMax, active: st.activeIntervalMin, text: App.Proactive.statusText() });
+    })()`));
+  } catch (e) { bounds = null; }
+  if (bounds && bounds.lo === 120 && bounds.hi === 180) ok('上下限已保存（120~180 分钟）');
+  else bad('上下限保存异常：' + JSON.stringify(bounds));
+  if (bounds && bounds.active >= 120 && bounds.active <= 180) ok('本轮随机间隔落在新上下限内：' + bounds.active + ' 分钟');
+  else bad('随机间隔未落在新上下限：' + JSON.stringify(bounds));
+  if (bounds && /随机/.test(bounds.text)) ok('状态文案显示随机（' + bounds.text + '）');
+  else bad('状态文案异常：' + (bounds && bounds.text));
+
+  const rolls2 = await page.eval(`(async () => {
+    const out = [];
+    for (let i = 0; i < 12; i++) { await App.Proactive.setIntervalMin(0); out.push(App.Proactive.getActiveIntervalMin()); }
+    return JSON.stringify(out);
+  })()`);
+  let roll2 = [];
+  try { roll2 = JSON.parse(rolls2); } catch (e) { roll2 = []; }
+  const inRange2 = roll2.length >= 10 && roll2.every((n) => Number(n) >= 120 && Number(n) <= 180);
+  if (inRange2) ok('改上下限后连续抽取均落在 120~180 分钟');
+  else bad('改上下限后抽取越界：' + rolls2);
 
   // 随机模式下后台通知排期也使用本轮随机值
   await page.eval(`(async () => { await App.Proactive.setIntervalMin(0); window.__AICHAT_NOTIFY_CALLS__ = []; return true; })()`);
@@ -293,7 +353,7 @@ async function waitFor(page, expr, timeoutMs = 10000, intervalMs = 120) {
   await page.eval(`(() => { try { Object.defineProperty(document, 'hidden', { configurable: true, get: () => true }); } catch (e) {} document.dispatchEvent(new Event('visibilitychange')); return 'ok'; })()`);
   await sleep(800);
   const bgDelay = Number(await page.eval(`(() => { const c = (window.__AICHAT_NOTIFY_CALLS__ || []).filter(x => x.method === 'notify.schedule').pop(); return c && c.args ? Number(c.args.delayMs) : 0; })()`));
-  if (bgDelay >= 15 * 60000 && bgDelay <= 120 * 60000) ok('随机模式下后台排期落在 15~120 分钟（' + Math.round(bgDelay / 60000) + ' 分钟）');
+  if (bgDelay >= 120 * 60000 && bgDelay <= 180 * 60000) ok('随机模式下后台排期落在 120~180 分钟（' + Math.round(bgDelay / 60000) + ' 分钟）');
   else bad('随机模式后台排期异常：' + bgDelay);
   if (Math.round(bgDelay / 60000) === activeBeforeBG) ok('排期使用本轮随机值（' + activeBeforeBG + ' 分钟）');
   else bad('排期未使用本轮随机值：active=' + activeBeforeBG + ' delay=' + Math.round(bgDelay / 60000));
@@ -308,9 +368,103 @@ async function waitFor(page, expr, timeoutMs = 10000, intervalMs = 120) {
   await sleep(500);
   await page.screenshot(path.join(SHOTS, '97-settings-proactive-random.png'));
 
+  // ---------- 9. 到点后由模型读上下文决定发/不发 ----------
+  // 用 5 分钟间隔（种子消息 30 分钟前），确保 idleDue 成立
+  await page.eval(`(async () => {
+    await App.Proactive.setRandomRange(60, 480);
+    await App.Proactive.setIntervalMin(5);
+    await App.Proactive.setEnabled(true);
+    return true;
+  })()`);
+
+  const resetForDecision = async (reply) => {
+    return page.eval(`(async () => {
+      window.__PROACTIVE_REPLY__ = ${JSON.stringify(reply)};
+      window.__PROACTIVE_EVENTS__ = [];
+      await App.DB.settings.set('proactive_last_at', 0);
+      await App.DB.settings.set('proactive_day_count', 0);
+      await App.DB.settings.set('proactive_day', '');
+      // 把最新一条消息改旧，模拟「已经空闲足够久」，否则 idleDue 不成立
+      const msgs = await App.DB.byIndex('messages', 'sessionId', 'sess_p');
+      msgs.sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
+      const last = msgs[msgs.length - 1];
+      if (last) {
+        const aged = Date.now() - Math.max(90, App.Proactive.getActiveIntervalMin() + 60) * 60000;
+        await App.DB.put('messages', Object.assign({}, last, { createdAt: aged }));
+      }
+      return 'ok';
+    })()`);
+  };
+
+  const proactiveSnapshot = async () => JSON.parse(await page.eval(`(async () => {
+    const msgs = await App.DB.byIndex('messages', 'sessionId', 'sess_p');
+    msgs.sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
+    const sess = await App.DB.get('sessions', 'sess_p');
+    const lastAt = await App.DB.settings.get('proactive_last_at', 0);
+    const dayCount = await App.DB.settings.get('proactive_day_count', 0);
+    const last = msgs.length ? msgs[msgs.length - 1] : null;
+    return JSON.stringify({
+      msgs: msgs.length,
+      lastContent: last ? String(last.content || '') : '',
+      unread: sess.unread || 0,
+      lastAt: Number(lastAt || 0),
+      dayCount: Number(dayCount || 0),
+      proactiveEvents: (window.__PROACTIVE_EVENTS__ || []).filter(e => e.reason === 'proactive').length
+    });
+  })()`));
+
+  const runCheck = async () => page.eval(`(async () => {
+    try { return JSON.stringify({ r: await App.Proactive.checkNow() }); } catch (e) { return JSON.stringify({ e: String(e && e.message || e) }); }
+  })()`);
+
+  // 9a. 模型决定「不发」
+  await resetForDecision('{"send":false}');
+  const beforeSkip = await proactiveSnapshot();
+  const skipRes = await runCheck();
+  await sleep(1200);
+  const afterSkip = await proactiveSnapshot();
+  if (afterSkip.msgs === beforeSkip.msgs) ok('模型返回 send:false 时不发消息（消息数仍为 ' + afterSkip.msgs + '）');
+  else bad('send:false 仍然发送了消息：' + JSON.stringify(afterSkip));
+  if (afterSkip.dayCount === 0) ok('未发送时不消耗当日主动消息配额');
+  else bad('未发送却累计了当日配额：' + afterSkip.dayCount);
+  if (afterSkip.lastAt > 0) ok('未发送也记录尝试时间（避免每 30s 重试）');
+  else bad('未发送时未记录尝试时间（checkNow=' + skipRes + '）');
+  if (afterSkip.proactiveEvents === 0) ok('未发送时不触发 session-updated 事件');
+  else bad('未发送却触发了事件：' + afterSkip.proactiveEvents);
+
+  // 9b. 模型决定「发」
+  await resetForDecision('{"send":true,"message":"*伸了个懒腰* 在忙吗？"}');
+  const beforeSend = await proactiveSnapshot();
+  const sendRes = await runCheck();
+  await sleep(1500);
+  const afterSend = await proactiveSnapshot();
+  if (afterSend.msgs === beforeSend.msgs + 1) ok('模型返回 send:true 时发送 1 条消息');
+  else bad('send:true 未正确发送（checkNow=' + sendRes + '）：' + JSON.stringify(afterSend));
+  if (afterSend.lastContent.indexOf('在忙吗') >= 0) ok('消息内容来自模型给出的 message');
+  else bad('消息内容异常：' + afterSend.lastContent);
+  if (afterSend.unread === beforeSend.unread + 1) ok('发送后未读数 +1');
+  else bad('未读数未增加：' + afterSend.unread);
+  if (afterSend.dayCount === 1) ok('发送后当日主动消息计数为 1');
+  else bad('当日计数异常：' + afterSend.dayCount);
+  if (afterSend.proactiveEvents >= 1) ok('发送后触发 session-updated 事件');
+  else bad('发送后没有触发事件');
+
+  // 9c. 纯文本回复兼容（旧模型/未按 JSON 输出时仍当作要发送）
+  await resetForDecision('你终于来啦，我刚泡好茶。');
+  const beforePlain = await proactiveSnapshot();
+  const plainRes = await runCheck();
+  await sleep(1500);
+  const afterPlain = await proactiveSnapshot();
+  if (afterPlain.msgs === beforePlain.msgs + 1 && afterPlain.lastContent.indexOf('你终于来啦') >= 0) ok('纯文本回复按「发送」处理（兼容旧模型）');
+  else bad('纯文本回复未被发送（checkNow=' + plainRes + '）：' + JSON.stringify(afterPlain));
+
+  // 恢复默认设置
+  await page.eval(`(async () => { await App.Proactive.setRandomRange(60, 480); await App.Proactive.setIntervalMin(60); return true; })()`);
+
+
   await page.eval(`(async () => { await App.Proactive.setIntervalMin(60); return true; })()`);
 
-  console.log('\n========== 主动消息 E2E 结果 ==========');
+  console.log('\n========== 主动消息 / 随机间隔 / 到点决策 E2E 结果 ==========');
   if (problems.length) {
     console.log('失败 ' + problems.length + ' 项：');
     problems.forEach((p) => console.log('  - ' + p));

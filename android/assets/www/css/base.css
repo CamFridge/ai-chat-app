@@ -688,6 +688,7 @@ svg { display: block; }
 .sheet-item .grow { display: flex; flex-direction: column; gap: 2px; }
 .sheet-cancel { margin: 8px; border-radius: 10px; background: var(--card-2); min-height: 46px; font-size: 16px; }
 .toast-wrap {
+  pointer-events: none;
   position: fixed;
   left: 0; right: 0;
   top: 30%;
@@ -699,6 +700,7 @@ svg { display: block; }
   z-index: 2000;
 }
 .toast {
+  pointer-events: none;
   max-width: 78vw;
   padding: 10px 16px;
   border-radius: 8px;
@@ -938,3 +940,8 @@ html[data-theme="amoled"] .msg-bubble code.inline { background: rgba(255, 255, 2
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: .001ms !important; animation-iteration-count: 1 !important; transition-duration: .001ms !important; }
 }
+
+/* ---------------- 图片预览（App.Media.preview 复用） ---------------- */
+.media-preview { display: flex; flex-direction: column; align-items: center; gap: 8px; }
+.media-preview-img { max-width: 100%; max-height: 62vh; object-fit: contain; border-radius: 10px; background: var(--card-2); }
+.media-preview-name { font-size: 12px; color: var(--text-3); word-break: break-all; text-align: center; }
