@@ -68,11 +68,17 @@
         images: [],
         pendingAttach: null,
         imgCache: {},
-        styleAvatarUri: ''   // 已渲染的「我」头像 data URI 缓存（v1.3.0）
+        styleAvatarUri: '',  // 已渲染的「我」头像 data URI 缓存（v1.3.0）
+        isGroup: false,      // 群聊会话（v1.4.0）
+        members: [],         // 群成员 [{ id, name, avatar, character }]（v1.4.0）
+        memberById: {},      // 群成员索引（v1.4.0）
+        textMode: false,     // 预设为「文本模式」（v1.4.0）
+        loreText: ''         // 本轮命中的世界书文本（v1.4.0）
       };
 
       /* ---------------- 页面骨架 ---------------- */
       var topbar = App.UI.el('div', { class: 'chat-topbar' });
+      var sceneBar = App.UI.el('div', { class: 'chat-scene-bar hidden' });
       var listEl = App.UI.el('div', { class: 'msg-list chat-msg-list', attrs: { role: 'log', 'aria-live': 'polite' } });
       var noticeEl = App.UI.el('div', { class: 'chat-notice hidden' });
       var inputEl = App.UI.el('textarea', {
@@ -92,7 +98,7 @@
       attachBtn.setAttribute('data-guide-tap', 'attach');
       var composerInputWrap = App.UI.el('div', { class: 'composer-input-wrap composer-input-col' }, attachChips, inputEl);
       var composer = App.UI.el('div', { class: 'composer' }, attachBtn, composerInputWrap, sendBtn);
-      var wrap = App.UI.el('div', { class: 'chat-wrap chat-page-wrap' }, topbar, listEl, noticeEl, composer);
+      var wrap = App.UI.el('div', { class: 'chat-wrap chat-page-wrap' }, topbar, sceneBar, listEl, noticeEl, composer);
       root.appendChild(wrap);
 
       try { page.setTitle('聊天'); } catch (e) { /* 忽略 */ }
@@ -233,10 +239,18 @@
         imgRecord(id).then(function (rec) {
           K.clear(box);
           if (rec && rec.dataUri) {
-            box.appendChild(App.UI.el('img', {
+            var im = App.UI.el('img', {
               class: 'msg-image-img',
               attrs: { src: rec.dataUri, alt: rec.name || '图片', loading: 'lazy' }
-            }));
+            });
+            im.addEventListener('load', function () {
+              if (im.naturalWidth && im.naturalHeight / im.naturalWidth >= 2) {
+                box.classList.add('tall');
+                var tag = App.UI.el('span', { class: 'msg-img-tag', text: '长图 · 点击查看' });
+                box.appendChild(tag);
+              }
+            });
+            box.appendChild(im);
             if (rec.name) box.appendChild(App.UI.el('div', { class: 'msg-image-name', text: rec.name }));
           } else {
             box.classList.add('missing');
@@ -275,13 +289,21 @@
         if (!att || !att.kind) return null;
         if (att.kind === 'image') {
           if (!att.dataUri) return null;
+          var wrap = App.UI.el('div', { class: 'msg-img-box' });
           var img = App.UI.el('img', {
             class: 'msg-attach-img',
             attrs: { src: att.dataUri, alt: att.name || '图片', loading: 'lazy' }
           });
           img.setAttribute('role', 'button');
           img.setAttribute('data-att', 'image');
-          return img;
+          img.addEventListener('load', function () {
+            if (img.naturalWidth && img.naturalHeight / img.naturalWidth >= 2) {
+              wrap.classList.add('tall');
+              wrap.appendChild(App.UI.el('span', { class: 'msg-img-tag', text: '长图 · 点击查看' }));
+            }
+          });
+          wrap.appendChild(img);
+          return wrap;
         }
         var card = App.UI.el('div', {
           class: 'msg-attach-file',
@@ -314,9 +336,18 @@
               if (node) bubble.appendChild(node);
             });
           }
+        } else if (!String(m.content || '').trim() && m.status !== 'streaming') {
+          // 空正文（例如请求失败）：不渲染空气泡，只保留错误条（v1.4.2）
+          bubble.classList.add('md', 'is-empty');
         } else {
           bubble.classList.add('md');
-          renderRichContent(bubble, m.content);
+          if (st.textMode) {
+            // 文本模式：纯文本输出，不做动作斜体与图片标记渲染（v1.4.0）
+            bubble.classList.add('text-mode');
+            bubble.textContent = String(m.content || '');
+          } else {
+            renderRichContent(bubble, m.content);
+          }
         }
         var streaming = m.status === 'streaming';
         if (streaming) {
@@ -389,17 +420,200 @@
         if (isMe) {
           av = myAvatarEl();
           st.styleAvatarUri = userAvatarUri();
+        } else if (st.isGroup) {
+          // 群聊：按消息上的发言人渲染头像（v1.4.0）
+          var mem = memberOf(m);
+          av = K.avatarEl(mem || { name: (m.speakerName || '?') }, 'sm');
         } else {
           av = K.avatarEl(st.character || { name: '?' }, 'sm');
         }
         av.classList.add('msg-avatar');
+        // 点头像即可更换头像（v1.4.2）
+        av.classList.add('tap-edit');
+        av.setAttribute('role', 'button');
+        av.setAttribute('aria-label', isMe ? '更换我的头像' : '更换角色头像');
+        if (isMe) {
+          av.addEventListener('click', function (ev) {
+            if (ev && ev.stopPropagation) ev.stopPropagation();
+            chooseMyAvatar();
+          });
+        } else if (st.isGroup) {
+          var memTap = memberOf(m);
+          if (memTap) {
+            av.addEventListener('click', function (ev) {
+              if (ev && ev.stopPropagation) ev.stopPropagation();
+              chooseCharacterAvatar(memTap);
+            });
+          }
+        } else if (st.character) {
+          av.addEventListener('click', function (ev) {
+            if (ev && ev.stopPropagation) ev.stopPropagation();
+            chooseCharacterAvatar(st.character);
+          });
+        }
         node.appendChild(av);
         var body = App.UI.el('div', { class: 'msg-body' });
+        if (!isMe && st.isGroup) {
+          body.appendChild(App.UI.el('div', {
+            class: 'msg-speaker',
+            text: m.speakerName || (memberOf(m) && memberOf(m).name) || '角色'
+          }));
+        }
         body.appendChild(buildBubble(m));
         body.appendChild(buildMeta(m));
         if (m.status === 'error') body.appendChild(buildErrorBox(m));
         node.appendChild(body);
         return node;
+      }
+
+      // 群聊成员查找（v1.4.0）
+      function memberOf(m) {
+        if (!st.isGroup || !m || !m.characterId) return null;
+        return st.memberById[m.characterId] || null;
+      }
+
+      /* ---------------- 换头像 / 聊天背景（v1.4.2） ---------------- */
+      function styleApi() {
+        return App.Style || null;
+      }
+
+      function errMsg(err) {
+        if (!err) return '未知错误';
+        if (typeof err === 'string') return err;
+        return err.message || err.reason || String(err) || '未知错误';
+      }
+
+      function pickImageData() {
+        var M = App.Media;
+        if (!M || typeof M.pickImage !== 'function') {
+          return Promise.reject(new Error('相册功能不可用，请重启 App'));
+        }
+        return Promise.resolve(M.pickImage());
+      }
+
+      // 图片选择面板：从相册选择 / 恢复默认
+      function pickImageSheet(title, canReset, resetLabel) {
+        var items = [{ id: 'pick', value: 'pick', label: '从相册选择图片', icon: 'plus' }];
+        if (canReset) items.push({ id: 'reset', value: 'reset', label: resetLabel || '恢复默认', icon: 'refresh' });
+        return K.sheet({ title: title, items: items, cancelText: '取消' }).then(function (item) {
+          return K.itemId(item) || null;
+        });
+      }
+
+      function chooseMyAvatar() {
+        var S = styleApi();
+        if (!S || typeof S.setUserAvatar !== 'function') {
+          toast('聊天界面模块不可用，请重启 App');
+          return;
+        }
+        var cur = '';
+        try {
+          cur = typeof S.getUserAvatar === 'function' ? S.getUserAvatar() || '' : userAvatarUri();
+        } catch (e) {
+          cur = userAvatarUri();
+        }
+        pickImageSheet('我的头像', !!cur, '恢复默认头像')
+          .then(function (act) {
+            if (!act) return null;
+            if (act === 'reset') {
+              return Promise.resolve(S.setUserAvatar('')).then(function () {
+                refreshMyAvatars(true);
+                toast('已恢复默认头像');
+              });
+            }
+            return pickImageData().then(function (att) {
+              if (!att || !att.dataUri) return null;
+              return Promise.resolve(S.setUserAvatar(att.dataUri)).then(function () {
+                refreshMyAvatars(true);
+                toast('头像已更新');
+              });
+            });
+          })
+          .catch(function (err) {
+            toast('设置头像失败：' + errMsg(err), 'error');
+          });
+      }
+
+      function chooseChatBackground() {
+        var S = styleApi();
+        if (!S || typeof S.setBackground !== 'function') {
+          toast('聊天界面模块不可用，请重启 App');
+          return;
+        }
+        var cur = '';
+        try {
+          cur = typeof S.getBackground === 'function' ? S.getBackground() || '' : '';
+        } catch (e) {
+          cur = '';
+        }
+        pickImageSheet('聊天背景', !!cur, '清除聊天背景')
+          .then(function (act) {
+            if (!act) return null;
+            if (act === 'reset') {
+              var clearFn = typeof S.clearBackground === 'function'
+                ? S.clearBackground
+                : function () { return S.setBackground(''); };
+              return Promise.resolve(clearFn.call(S)).then(function () {
+                toast('聊天背景已清除');
+              });
+            }
+            return pickImageData().then(function (att) {
+              if (!att || !att.dataUri) return null;
+              return Promise.resolve(S.setBackground(att.dataUri)).then(function () {
+                toast('聊天背景已更新');
+              });
+            });
+          })
+          .catch(function (err) {
+            toast('设置背景失败：' + errMsg(err), 'error');
+          });
+      }
+
+      // 角色头像变更后，只替换该角色相关消息的头像节点
+      function refreshCharacterAvatars(charId) {
+        if (!Array.isArray(st.messages) || !charId) return;
+        for (var i = 0; i < st.messages.length; i++) {
+          var m = st.messages[i];
+          if (!m || m.role === 'user' || !m.id) continue;
+          if (m.status === 'streaming') continue;
+          if (st.isGroup && m.characterId !== charId) continue;
+          replaceMsgEl(m);
+        }
+      }
+
+      function chooseCharacterAvatar(char) {
+        if (!char || !char.id) return;
+        pickImageSheet((char.name || '角色') + ' 的头像', true, '恢复默认（字母头像）')
+          .then(function (act) {
+            if (!act) return null;
+            function apply(avatar) {
+              var rec = {};
+              Object.keys(char).forEach(function (k) { rec[k] = char[k]; });
+              rec.avatar = avatar;
+              rec.updatedAt = Date.now();
+              return D.put('characters', rec).then(function () {
+                if (st.character && st.character.id === rec.id) st.character.avatar = avatar;
+                if (st.members && st.members.length) {
+                  for (var i = 0; i < st.members.length; i++) {
+                    if (st.members[i] && st.members[i].id === rec.id) st.members[i].avatar = avatar;
+                  }
+                }
+                if (st.memberById && st.memberById[rec.id]) st.memberById[rec.id].avatar = avatar;
+                char.avatar = avatar;
+                refreshCharacterAvatars(rec.id);
+                renderTopbar();
+                toast(avatar ? '角色头像已更新' : '已恢复默认头像');
+              });
+            }
+            if (act === 'reset') return apply('');
+            return pickImageData().then(function (att) {
+              if (!att || !att.dataUri) return null;
+              return apply(att.dataUri);
+            });
+          })
+          .catch(function (err) {
+            toast('设置角色头像失败：' + errMsg(err), 'error');
+          });
       }
 
       function replaceMsgEl(m) {
@@ -417,11 +631,15 @@
       /* ---------------- 空态 ---------------- */
       function renderEmptyState() {
         K.clear(listEl);
-        var card = st.character || { name: '聊天' };
+        var card = st.character || (st.isGroup && st.members && st.members[0]) || { name: '聊天' };
+        var name = st.isGroup ? ((st.session && st.session.title) || '群聊') : (card.name || '开始聊天');
+        var tip = st.isGroup
+          ? ('群里有 ' + ((st.members && st.members.length) || 1) + ' 个角色，发第一条消息开始吧')
+          : '还没有消息，发第一条消息开始对话吧';
         var node = App.UI.el('div', { class: 'chat-empty' },
           K.avatarEl(card, 'lg'),
-          App.UI.el('div', { class: 'chat-empty-name', text: card.name || '开始聊天' }),
-          App.UI.el('div', { class: 'chat-empty-tip', text: '还没有消息，发第一条消息开始对话吧' })
+          App.UI.el('div', { class: 'chat-empty-name', text: name }),
+          App.UI.el('div', { class: 'chat-empty-tip', text: tip })
         );
         listEl.appendChild(node);
       }
@@ -430,11 +648,23 @@
       function renderTopbar() {
         K.clear(topbar);
         var card = st.character || {};
+        var title = st.isGroup
+          ? ((st.session && st.session.title) || '群聊')
+          : (card.name || (st.session && st.session.title) || '聊天');
+        var sub = st.isGroup
+          ? ('群聊 · ' + (st.members.length || ((st.session && st.session.characterIds) || []).length) + ' 人')
+          : K.typeLabel(card.type);
         var left = App.UI.el('button', { class: 'chat-topbar-char', attrs: { type: 'button' } },
-          App.UI.el('span', { class: 'chat-topbar-name', text: card.name || (st.session && st.session.title) || '聊天' }),
-          App.UI.el('span', { class: 'chat-topbar-type', text: K.typeLabel(card.type) })
+          App.UI.el('span', { class: 'chat-topbar-name', text: title }),
+          App.UI.el('span', { class: 'chat-topbar-type', text: sub })
         );
-        left.addEventListener('click', function () { openCharacterDrawer(); });
+        left.addEventListener('click', function () {
+          if (st.isGroup) {
+            try { App.Router.push('groupManage', { sessionId: sessionId }); } catch (e) { toast('无法打开群成员'); }
+            return;
+          }
+          openCharacterDrawer();
+        });
 
         var modelText = (st.session && st.session.model) || '未设置模型';
         var right = App.UI.el('button', { class: 'chat-topbar-model', attrs: { type: 'button', 'aria-label': '切换模型' } },
@@ -445,6 +675,24 @@
 
         topbar.appendChild(left);
         topbar.appendChild(right);
+
+        // 场景条（v1.3.2）：有场景时显示当前场景，点一下可切换
+        var scenes = Array.isArray(card.scenarios) ? card.scenarios.filter(Boolean) : [];
+        var curScene = (st.session && st.session.scene) || '';
+        K.clear(sceneBar);
+        if (!scenes.length && !curScene) {
+          sceneBar.classList.add('hidden');
+        } else {
+          sceneBar.classList.remove('hidden');
+          var txt = curScene ? ('场景：' + curScene) : '场景：由上下文自由判断';
+          var chip = App.UI.el('button', { class: 'chat-scene-chip', attrs: { type: 'button', 'aria-label': '切换场景' } },
+            App.UI.el('span', { class: 'chat-scene-icon', html: K.iconHtml('world') }),
+            App.UI.el('span', { class: 'chat-scene-text ellipsis', text: txt }),
+            App.UI.el('span', { class: 'chat-scene-chev', html: K.iconHtml('chev') })
+          );
+          chip.addEventListener('click', function () { openSceneSheet(); });
+          sceneBar.appendChild(chip);
+        }
       }
 
       /* ---------------- 生成中按钮状态 ---------------- */
@@ -590,16 +838,24 @@
         var content = s.target.content;
         if (s.target.role === 'user') {
           bubble.textContent = content;
-        } else if (String(content || '').trim()) {
-          // 空内容（或只有空白）时保留「正在输入」动画，避免气泡被 :empty 规则隐藏
-          var now = Date.now();
-          if (!s.lastRichAt || now - s.lastRichAt >= RICH_RENDER_MS) {
-            s.lastRichAt = now;
-            renderRichContent(bubble, content);
-          } else {
-            bubble.textContent = content;
+        } else {
+          // 群聊：流式期间隐藏模型自报家门的「【角色名】」前缀
+          content = stripLeadingSpeaker(content);
+          if (String(content || '').trim()) {
+            // 空内容（或只有空白）时保留「正在输入」动画，避免气泡被 :empty 规则隐藏
+            if (st.textMode) {
+              bubble.textContent = content;
+            } else {
+              var now = Date.now();
+              if (!s.lastRichAt || now - s.lastRichAt >= RICH_RENDER_MS) {
+                s.lastRichAt = now;
+                renderRichContent(bubble, content);
+              } else {
+                bubble.textContent = content;
+              }
+            }
+            bubble.classList.remove('typing');
           }
-          bubble.classList.remove('typing');
         }
         bubble.classList.add('streaming');
         if (st.followBottom) scrollToBottom(true);
@@ -611,6 +867,24 @@
         st.streaming = null;
         var target = s.target;
         content = String(content === undefined || content === null ? '' : content);
+        // 群聊：按开头「【角色名】」确定最终发言人，并把前缀从正文里去掉（v1.4.0）
+        if (st.isGroup && content.trim()) {
+          var fallbackSpk = { characterId: target.characterId || '', name: target.speakerName || '' };
+          var parsed = null;
+          try {
+            if (App.Group && typeof App.Group.parseSpeakerReply === 'function') {
+              parsed = App.Group.parseSpeakerReply(content, st.members, fallbackSpk);
+            }
+          } catch (e) { parsed = null; }
+          if (parsed && typeof parsed.content === 'string') {
+            content = parsed.content;
+            if (parsed.characterId) target.characterId = parsed.characterId;
+            if (parsed.name) target.speakerName = parsed.name;
+          } else {
+            content = stripLeadingSpeaker(content);
+          }
+          content = stripLeadingSpeaker(content, true);
+        }
         target.content = content;
         writeVariant(target, content, usage);
         var u = usage || {};
@@ -682,12 +956,158 @@
         return null;
       }
 
+      /* ---------------- 上下文准备：群聊发言人 / 世界书 / 文本模式（v1.4.0） ---------------- */
+      function loreApi() {
+        return (App.Lorebook && typeof App.Lorebook.buildInjection === 'function') ? App.Lorebook : null;
+      }
+      function groupApi() {
+        return (App.Group && typeof App.Group.buildContext === 'function') ? App.Group : null;
+      }
+
+      // 用于世界书关键词匹配的最近上下文（最近 8 条）
+      function loreMatchText(history) {
+        var parts = [];
+        (history || []).slice(-8).forEach(function (m) {
+          var t = String((m && m.content) || '').trim();
+          if (!t) return;
+          parts.push((m.role === 'user' ? '' : ((m.speakerName || '') + (m.speakerName ? '：' : ''))) + t);
+        });
+        return parts.join('\n').slice(-4000);
+      }
+
+      function loadLore(history) {
+        var L = loreApi();
+        if (!L) return Promise.resolve('');
+        var text = loreMatchText(history);
+        if (!text) return Promise.resolve('');
+        var p;
+        try {
+          p = L.buildInjection({
+            text: text,
+            characterId: (st.session && st.session.characterId) || '',
+            lorebookIds: (st.session && Array.isArray(st.session.lorebookIds)) ? st.session.lorebookIds : undefined
+          });
+        } catch (e) { return Promise.resolve(''); }
+        return Promise.resolve(p).then(function (v) { return typeof v === 'string' ? v : ''; })
+          .catch(function () { return ''; });
+      }
+
+      // 把世界书与「文本模式」约束拼进 system（不依赖 chat-list.js 的 buildSystemPrompt）
+      function decorateContext(ctx, lore) {
+        var out = ctx || {};
+        var msgs = Array.isArray(out.messages) ? out.messages.slice() : [];
+        var extra = '';
+        if (lore) extra += '\n\n' + lore;
+        if (st.textMode) {
+          extra += '\n\n【输出模式：纯文本】只输出正文文本：不要使用【角色名】等对话标记、不要用星号包裹动作神态、不要输出图片标记、不要使用 Markdown 标题或列表。';
+        }
+        if (extra) {
+          var sysIdx = -1;
+          for (var i = 0; i < msgs.length; i++) {
+            if (msgs[i] && msgs[i].role === 'system') { sysIdx = i; break; }
+          }
+          if (sysIdx >= 0) {
+            msgs[sysIdx] = { role: 'system', content: String(msgs[sysIdx].content || '') + extra };
+          } else {
+            msgs.unshift({ role: 'system', content: extra.replace(/^\n+/, '') });
+          }
+        }
+        out.messages = msgs;
+        return out;
+      }
+
+      // 群里决定谁发言（模块缺失/失败返回 null，由 Group 内部退回轮换）
+      function decideGroupSpeaker(history) {
+        var G = groupApi();
+        if (!G || typeof G.decideSpeaker !== 'function') return Promise.resolve(null);
+        var p;
+        try {
+          p = G.decideSpeaker({
+            session: st.session,
+            members: st.members,
+            messages: history,
+            provider: st.provider,
+            model: (st.session && st.session.model) || ''
+          });
+        } catch (e) { return Promise.resolve(null); }
+        return Promise.resolve(p).then(function (spk) {
+          if (!spk || !spk.characterId) return null;
+          return spk;
+        }).catch(function () { return null; });
+      }
+
+      // 上下文 + 发言人：Promise<{ ctx, speaker }>
+      function prepareContext(history, target) {
+        var godOn = !!(st.character && st.character.godMode) || st.godMode === true;
+        var scene = (st.session && st.session.scene) || '';
+        var loreP = loadLore(history);
+        if (st.isGroup) {
+          var G = groupApi();
+          if (!G) return Promise.reject(new Error('群聊模块未加载，请重启应用'));
+          return Promise.resolve().then(function () {
+            return G.membersOf(st.session);
+          }).then(function (members) {
+            st.members = Array.isArray(members) ? members.slice() : [];
+            st.memberById = {};
+            st.members.forEach(function (x) { if (x && x.id) st.memberById[x.id] = x; });
+            return decideGroupSpeaker(history);
+          }).then(function (spk) {
+            if (spk) {
+              target.characterId = spk.characterId;
+              target.speakerName = spk.name || '';
+            }
+            return loreP.then(function (lore) {
+              st.loreText = lore;
+              var ctx = G.buildContext({
+                session: st.session,
+                members: st.members,
+                persona: st.persona,
+                preset: st.preset,
+                messages: history,
+                godMode: godOn,
+                scene: scene,
+                lore: lore,
+                textMode: st.textMode
+              });
+              return { ctx: ctx, speaker: spk || null };
+            });
+          });
+        }
+        return loreP.then(function (lore) {
+          st.loreText = lore;
+          var ctx = K.buildContext({
+            character: st.character,
+            persona: st.persona,
+            preset: st.preset,
+            messages: history,
+            godMode: godOn,
+            images: st.images,
+            scene: scene,
+            scenarios: (st.character && Array.isArray(st.character.scenarios)) ? st.character.scenarios : []
+          });
+          return { ctx: decorateContext(ctx, lore), speaker: null };
+        });
+      }
+
+      // 群聊流式展示时去掉模型回复开头的「【角色名】」
+      function stripLeadingSpeaker(text, loose) {
+        var s = String(text || '');
+        if (!st.isGroup) return s;
+        var m = /^\s*【([^】]{1,30})】\s*/.exec(s);
+        if (!m) m = /^\s*\[([^\]]{1,30})\]\s*/.exec(s);
+        if (!m) return s;
+        var name = String(m[1] || '').trim();
+        var hit = false;
+        (st.members || []).forEach(function (x) { if (x && x.name === name) hit = true; });
+        return (hit || loose) ? s.slice(m[0].length) : s;
+      }
+
       // 发起一次流式请求。opts: {target, history, mode:'new'|'regen'|'continue'}
       function requestStream(opts) {
         var target = opts.target;
         if (st.streaming) { toast('正在生成，请先停止'); return Promise.resolve(); }
         if (st.destroyed) return Promise.resolve();
-        if (!st.character) {
+        if (!st.character && !st.isGroup) {
           return Promise.resolve(failTarget(target, { code: 'unknown', message: '会话角色已被删除，无法继续聊天', title: '无法发送' }));
         }
         var provider = st.provider;
@@ -710,86 +1130,86 @@
         if (opts.mode === 'continue') {
           history.push({ role: 'user', content: '（请接着你上一条回复继续写下去，不要重复已经写过的内容。）' });
         }
-        var ctx;
-        try {
-          // 上帝模式：角色级开关 || 全局设置（v1.3.0，角色字段由角色编辑页维护）
-          var charGod = !!(st.character && st.character.godMode);
-          var godOn = charGod || st.godMode === true;
-          ctx = K.buildContext({
-            character: st.character,
-            persona: st.persona,
-            preset: st.preset,
-            messages: history,
-            godMode: godOn,
-            images: st.images
-          });
-        } catch (e) {
-          return Promise.resolve(failTarget(target, { code: 'unknown', message: '上下文组装失败：' + ((e && e.message) || ''), title: '生成失败' }));
-        }
         var params = K.paramsOf(st.preset);
-        var s = {
-          target: target,
-          handle: null,
-          stopped: false,
-          generated: '',
-          base: opts.mode === 'continue' ? String(target.content || '') : '',
-          mode: opts.mode,
-          ctxTokens: ctx.usedTokens,
-          startedAt: U.now(),
-          pending: false
-        };
-        st.streaming = s;
-        target.status = 'streaming';
-        target.errorText = '';
-        target.errorCode = '';
-        K.setGenerating(sessionId, true);
-        setGeneratingUI(true);
-        replaceMsgEl(target);
-        var save = U.throttle(function () {
-          if (st.streaming === s && !s.discard) persist(target).catch(function () { /* 节流落库失败可容忍 */ });
-        }, 600);
-        function schedule() {
-          if (s.pending) return;
-          s.pending = true;
-          U.raf(function () {
-            s.pending = false;
-            if (st.streaming !== s) return;
-            applyStreaming(s);
-          });
-        }
-        try {
-          s.handle = App.API.chatStream({
-            provider: provider,
-            model: model,
-            messages: ctx.messages,
-            params: params,
-            onDelta: function (chunk) {
-              if (typeof chunk !== 'string' || !chunk || st.streaming !== s) return;
-              s.generated += chunk;
-              target.content = s.base + s.generated;
-              schedule();
-              save();
-            },
-            onDone: function (res) {
+
+        function begin(prepped) {
+          var ctx = prepped.ctx;
+          var s = {
+            target: target,
+            handle: null,
+            stopped: false,
+            generated: '',
+            base: opts.mode === 'continue' ? String(target.content || '') : '',
+            mode: opts.mode,
+            ctxTokens: (ctx && ctx.usedTokens) || 0,
+            startedAt: U.now(),
+            pending: false
+          };
+          st.streaming = s;
+          target.status = 'streaming';
+          target.errorText = '';
+          target.errorCode = '';
+          K.setGenerating(sessionId, true);
+          setGeneratingUI(true);
+          replaceMsgEl(target);
+          var save = U.throttle(function () {
+            if (st.streaming === s && !s.discard) persist(target).catch(function () { /* 节流落库失败可容忍 */ });
+          }, 600);
+          function schedule() {
+            if (s.pending) return;
+            s.pending = true;
+            U.raf(function () {
+              s.pending = false;
               if (st.streaming !== s) return;
-              var text = res && typeof res.text === 'string' ? res.text : '';
-              var finalText = s.base + (text || s.generated);
-              finalizeOk(s, finalText, res && res.usage);
-            },
-            onError: function (err) {
-              if (st.streaming !== s) return;
-              if (s.stopped || (err && (err.code === 'cancel' || err.code === 'aborted'))) {
-                finalizeOk(s, target.content, null);
-              } else {
-                finalizeError(s, err);
+              applyStreaming(s);
+            });
+          }
+          try {
+            s.handle = App.API.chatStream({
+              provider: provider,
+              model: model,
+              messages: (ctx && ctx.messages) || [],
+              params: params,
+              onDelta: function (chunk) {
+                if (typeof chunk !== 'string' || !chunk || st.streaming !== s) return;
+                s.generated += chunk;
+                target.content = s.base + s.generated;
+                schedule();
+                save();
+              },
+              onDone: function (res) {
+                if (st.streaming !== s) return;
+                var text = res && typeof res.text === 'string' ? res.text : '';
+                var finalText = s.base + (text || s.generated);
+                finalizeOk(s, finalText, res && res.usage);
+              },
+              onError: function (err) {
+                if (st.streaming !== s) return;
+                if (s.stopped || (err && (err.code === 'cancel' || err.code === 'aborted'))) {
+                  finalizeOk(s, target.content, null);
+                } else {
+                  finalizeError(s, err);
+                }
               }
-            }
-          });
-        } catch (e) {
-          finalizeError(s, { code: 'unknown', message: (e && e.message) || '请求失败' });
+            });
+          } catch (e) {
+            finalizeError(s, { code: 'unknown', message: (e && e.message) || '请求失败' });
+          }
+          scrollToBottom(true);
+          return Promise.resolve();
         }
-        scrollToBottom(true);
-        return Promise.resolve();
+
+        return Promise.resolve().then(function () {
+          return prepareContext(history, target);
+        }).then(function (prepped) {
+          if (st.destroyed) return null;
+          if (!prepped || !prepped.ctx) throw new Error('上下文为空');
+          return begin(prepped);
+        }).catch(function (err) {
+          console.error('[chat] 生成前置准备失败', err);
+          failTarget(target, { code: 'unknown', message: '上下文组装失败：' + ((err && err.message) || ''), title: '生成失败' });
+          return null;
+        });
       }
 
       function stopStream() {
@@ -849,7 +1269,7 @@
           return Promise.resolve();
         }
         var p;
-        try { p = M.pickImage(); } catch (e) { p = Promise.reject(e); }
+        try { p = M.pickImage({ maxSide: 1280, quality: 88 }); } catch (e) { p = Promise.reject(e); }
         return Promise.resolve(p).then(function (att) {
           if (!att) return null;
           if (!att.kind) att.kind = 'image';
@@ -973,7 +1393,7 @@
           toast('网络不可用，消息未发送', 'error');
           return;
         }
-        if (!st.character) { toast('会话角色已被删除，无法继续聊天', 'error'); return; }
+        if (!st.character && !st.isGroup) { toast('会话角色已被删除，无法继续聊天', 'error'); return; }
         st.lastDraft = text;
         st.pendingAttach = null;
         renderAttachChips();
@@ -1203,6 +1623,62 @@
         }
       }
 
+      /* ---------------- 从某条消息分支对话（v1.4.0 需求⑥） ---------------- */
+      function branchFrom(m) {
+        if (!st.session || !m) return Promise.resolve();
+        var idx = st.messages.indexOf(m);
+        if (idx < 0) return Promise.resolve();
+        var src = st.messages.slice(0, idx + 1);
+        var now = U.now();
+        var newSession = {
+          id: U.uid('sess'),
+          title: ((st.session.title || '对话') + '（分支）').slice(0, 40),
+          characterId: st.session.characterId || '',
+          personaId: st.session.personaId || '',
+          presetId: st.session.presetId || '',
+          providerId: st.session.providerId || '',
+          model: st.session.model || '',
+          pinned: false,
+          unread: 0,
+          isGenerating: false,
+          greetingIndex: typeof st.session.greetingIndex === 'number' ? st.session.greetingIndex : 0,
+          scene: st.session.scene || '',
+          kind: st.session.kind || 'single',
+          characterIds: (st.session.characterIds || []).slice(),
+          groupId: st.session.groupId || '',
+          lorebookIds: (st.session.lorebookIds || []).slice(),
+          lastText: '',
+          lastRole: '',
+          lastAt: now,
+          createdAt: now,
+          updatedAt: now
+        };
+        var copies = src.map(function (x) {
+          var c = {};
+          Object.keys(x || {}).forEach(function (k) { c[k] = x[k]; });
+          c.id = U.uid('msg');
+          c.sessionId = newSession.id;
+          delete c.deleted;
+          return c;
+        });
+        var last = copies[copies.length - 1];
+        if (last) {
+          newSession.lastText = String(last.content || '').slice(0, 80);
+          newSession.lastRole = last.role || '';
+        }
+        return D.put('sessions', newSession).then(function () {
+          return copies.length ? D.bulkPut('messages', copies) : null;
+        }).then(function () {
+          if (st.destroyed) return null;
+          toast('已分出分支（' + copies.length + ' 条消息）', 'ok');
+          try { App.Router.push('chat', { sessionId: newSession.id }); } catch (e) { /* 忽略 */ }
+          return null;
+        }).catch(function (err) {
+          console.error('[chat] 分支失败', err);
+          toast('分支失败：' + ((err && err.message) || '未知错误'), 'error');
+        });
+      }
+
       function openMsgMenu(m) {
         var items = [
           { id: 'copy', value: 'copy', label: '复制', icon: 'copy' },
@@ -1212,6 +1688,7 @@
           items.push({ id: 'regen', value: 'regen', label: '重新生成', icon: 'refresh' });
           if (m === lastMessage()) items.push({ id: 'continue', value: 'continue', label: '继续生成', icon: 'play' });
         }
+        items.push({ id: 'branch', value: 'branch', label: '从这里分支对话', icon: 'link' });
         items.push({ id: 'delete', value: 'delete', label: '删除消息', icon: 'delete', danger: true });
         K.sheet({ title: '消息操作', items: items, cancelText: '取消' }).then(function (item) {
           var act = K.itemId(item);
@@ -1220,6 +1697,7 @@
           if (act === 'edit') return editMessage(m);
           if (act === 'regen') return regenerate(m);
           if (act === 'continue') return continueGeneration(m);
+          if (act === 'branch') return branchFrom(m);
           if (act === 'delete') return deleteMessage(m);
           return null;
         }).catch(function (err) { console.error('[chat] 消息菜单出错', err); });
@@ -1227,8 +1705,9 @@
 
       /* ---------------- 会话菜单 / 重命名 / 切模型 / 生成设置 ---------------- */
       function renameSession() {
+        var isGroup = !!st.isGroup;
         return K.prompt({
-          title: '重命名会话',
+          title: isGroup ? '重命名群聊' : '重命名会话',
           value: (st.session && st.session.title) || '',
           placeholder: '会话名称',
           okText: '保存'
@@ -1237,7 +1716,13 @@
           var title = String(name).trim();
           if (!title) { toast('名称不能为空'); return; }
           st.session.title = title;
-          return D.put('sessions', st.session).then(function () {
+          var writeP;
+          if (isGroup && App.Group && typeof App.Group.rename === 'function') {
+            writeP = Promise.resolve().then(function () { return App.Group.rename(st.session, title); });
+          } else {
+            writeP = D.put('sessions', st.session);
+          }
+          return writeP.then(function () {
             applyTitle();
             toast('已重命名', 'ok');
           });
@@ -1561,8 +2046,8 @@
 
       function deleteSession() {
         K.confirm({
-          title: '删除会话',
-          message: '将删除该会话及其全部消息，不可恢复。确定删除吗？',
+          title: st.isGroup ? '删除群聊' : '删除会话',
+          message: st.isGroup ? '将删除该群聊及其全部消息，不可恢复。确定删除吗？' : '将删除该会话及其全部消息，不可恢复。确定删除吗？',
           okText: '删除',
           danger: true
         }).then(function (ok) {
@@ -1580,8 +2065,13 @@
           }).then(function () {
             return D.del('sessions', sessionId);
           }).then(function () {
+            // 群聊：级联删除群记录（v1.4.0）
+            var gid = st.session && st.session.groupId;
+            if (!gid) return null;
+            return D.del('groups', gid).catch(function () { return null; });
+          }).then(function () {
             st.destroyed = true;
-            toast('已删除会话', 'ok');
+            toast(st.isGroup ? '已删除群聊' : '已删除会话', 'ok');
             var popped = false;
             try { popped = App.Router.pop(); } catch (e) { popped = false; }
             if (!popped) { try { App.Router.goChatList(); } catch (e2) { /* 忽略 */ } }
@@ -1808,20 +2298,100 @@
         });
       }
 
+      /* ---------------- 切换场景（v1.3.2） ---------------- */
+      function openSceneSheet() {
+        var scenes = (st.character && Array.isArray(st.character.scenarios)) ? st.character.scenarios.filter(Boolean) : [];
+        var cur = String((st.session && st.session.scene) || '');
+        var AUTO_ID = '__auto__';
+        var items = [{ id: AUTO_ID, value: AUTO_ID, label: '由上下文自由判断', desc: '不限定场景，角色会根据对话自然带入环境' }];
+        scenes.forEach(function (text, i) {
+          var t = String(text || '').trim();
+          if (!t) return;
+          items.push({
+            id: t, value: t,
+            label: '场景 ' + (i + 1) + '：' + (t.length > 18 ? t.slice(0, 18) + '…' : t),
+            desc: t
+          });
+        });
+        if (!scenes.length) {
+          items.push({ id: '__hint', value: '__hint', label: '这个角色还没有保存场景', desc: '可在角色编辑页添加多条场景，之后聊天时自由切换', icon: 'info' });
+        }
+        K.sheet({
+          title: '这次对话发生在哪里？',
+          items: items.filter(function (it) { return it.value !== '__hint'; }),
+          cancelText: '取消',
+          selected: cur ? cur : AUTO_ID
+        }).then(function (item) {
+          if (!item) return null;
+          var raw = String(K.itemId(item) || '');
+          var val = raw === AUTO_ID ? '' : raw;
+          if (!st.session) return null;
+          st.session.scene = val;
+          return D.put('sessions', st.session).then(function () {
+            st.scene = val;
+            toast(val ? '场景已切换：' + (val.length > 20 ? val.slice(0, 20) + '…' : val) : '场景已设为「由上下文自由判断」', 'ok');
+            return null;
+          });
+        }).catch(function (err) { console.error('[chat] 切换场景失败', err); });
+      }
+
+      /* ---------------- 我的身份 / 世界书 / 群成员（v1.4.0） ---------------- */
+      function pickPersona() {
+        var P = App.Persona;
+        if (!P || typeof P.pickForSession !== 'function') { toast('身份模块未加载，请重启应用'); return Promise.resolve(); }
+        var p;
+        try { p = P.pickForSession(sessionId); } catch (e) {
+          toast('打开身份选择失败', 'error');
+          return Promise.resolve();
+        }
+        return Promise.resolve(p).then(function (res) {
+          if (res === undefined) return null; // 用户取消选择
+          st.persona = res || { id: '', name: '我', description: '', avatar: '' };
+          if (st.session) st.session.personaId = (res && res.id) || '';
+          renderTopbar();
+          refreshMyAvatars(true);
+          toast(res && res.id ? ('已切换身份：' + (res.name || '我')) : '已切换为不设定身份', 'ok');
+          return null;
+        }).catch(function (err) {
+          console.error('[chat] 切换身份失败', err);
+          toast('切换身份失败', 'error');
+        });
+      }
+
+      function openLorebook() {
+        var cid = (st.session && st.session.characterId) || '';
+        if (!cid) { toast('群聊请到各角色编辑页管理世界书', 'error'); return; }
+        try { App.Router.push('lorebook', { characterId: cid }); } catch (e) { toast('打开世界书失败', 'error'); }
+      }
+
+      function openGroupMembers() {
+        try { App.Router.push('groupManage', { sessionId: sessionId }); } catch (e) { toast('打开群成员失败', 'error'); }
+      }
+
       function openSessionMenu() {
+        var items = [
+          { id: 'rename', value: 'rename', label: '重命名会话', icon: 'edit' },
+          { id: 'model', value: 'model', label: '切换模型 / API', icon: 'api' },
+          { id: 'greeting', value: 'greeting', label: '换个开场白', icon: 'chat' },
+          { id: 'scene', value: 'scene', label: '切换场景', icon: 'world' },
+          { id: 'gen', value: 'gen', label: '生成设置（预设）', icon: 'settings' },
+          { id: 'persona', value: 'persona', label: '我的身份', icon: 'user' },
+          { id: 'myavatar', value: 'myavatar', label: '换我的头像', icon: 'user' },
+          { id: 'bg', value: 'bg', label: '聊天背景', icon: 'star' }
+        ];
+        if (st.isGroup) {
+          items.push({ id: 'members', value: 'members', label: '群成员', icon: 'character' });
+        } else {
+          items.push({ id: 'lorebook', value: 'lorebook', label: '世界书', icon: 'world' });
+        }
+        items.push({ id: 'save', value: 'save', label: '存档', icon: 'check' });
+        items.push({ id: 'saves', value: 'saves', label: '存档点', icon: 'time' });
+        if (!st.isGroup) items.push({ id: 'char', value: 'char', label: '角色信息', icon: 'character' });
+        items.push({ id: 'clear', value: 'clear', label: '清空消息', icon: 'trash' });
+        items.push({ id: 'delete', value: 'delete', label: '删除会话', icon: 'delete', danger: true });
         K.sheet({
           title: (st.session && st.session.title) || '会话操作',
-          items: [
-            { id: 'rename', value: 'rename', label: '重命名会话', icon: 'edit' },
-            { id: 'model', value: 'model', label: '切换模型 / API', icon: 'api' },
-            { id: 'greeting', value: 'greeting', label: '换个开场白', icon: 'chat' },
-            { id: 'gen', value: 'gen', label: '生成设置（预设）', icon: 'settings' },
-            { id: 'save', value: 'save', label: '存档', icon: 'check' },
-            { id: 'saves', value: 'saves', label: '存档点', icon: 'time' },
-            { id: 'char', value: 'char', label: '角色信息', icon: 'character' },
-            { id: 'clear', value: 'clear', label: '清空消息', icon: 'trash' },
-            { id: 'delete', value: 'delete', label: '删除会话', icon: 'delete', danger: true }
-          ],
+          items: items,
           cancelText: '取消'
         }).then(function (item) {
           var act = K.itemId(item);
@@ -1829,7 +2399,13 @@
           if (act === 'rename') return renameSession();
           if (act === 'model') return openModelSheet();
           if (act === 'greeting') return openGreetingSheet();
+          if (act === 'scene') return openSceneSheet();
           if (act === 'gen') return openGenSettings();
+          if (act === 'persona') return pickPersona();
+          if (act === 'myavatar') return chooseMyAvatar();
+          if (act === 'bg') return chooseChatBackground();
+          if (act === 'members') return openGroupMembers();
+          if (act === 'lorebook') return openLorebook();
           if (act === 'save') return createSave();
           if (act === 'saves') return openSavesSheet();
           if (act === 'char') return openCharacterDrawer();
@@ -1862,6 +2438,12 @@
             })
           )
         );
+        // 换头像入口（v1.4.2）
+        var avatarBtn = App.UI.el('button', { class: 'chat-drawer-avatarbtn', attrs: { type: 'button' }, text: '换头像' });
+        avatarBtn.addEventListener('click', function () {
+          chooseCharacterAvatar(st.character);
+        });
+        head.appendChild(avatarBtn);
         var body = App.UI.el('div', { class: 'chat-drawer-body' });
 
         function field(label, value) {
@@ -1878,7 +2460,11 @@
         field('背景', st.character.background);
         field('说话风格', st.character.speechStyle);
         field('口头禅', st.character.catchphrases);
-        field('场景', st.character.scenario);
+        var curScene = (st.session && st.session.scene) || '';
+        var sceneList = Array.isArray(st.character.scenarios) ? st.character.scenarios.filter(Boolean) : [];
+        if (curScene) field('当前场景', curScene);
+        else if (sceneList.length) field('场景', '由上下文自由判断（共 ' + sceneList.length + ' 个可选场景）');
+        else field('场景', st.character.scenario);
         field('开场白', st.character.firstMessage);
         // 只读展示：角色级上帝模式开关（在角色编辑页修改）
         field('上帝模式', st.character.godMode === true ? '已开启（角色设置）' : '未开启（可在角色编辑页开启）');
@@ -1967,6 +2553,51 @@
         st.followBottom = atBottom();
         if (listEl.scrollTop < 60 && st.hasOlder && !st.loadingOlder) loadOlder();
       }, { passive: true });
+
+      /* ---------------- 贴底跟随加固（v1.4.2） ----------------
+         图片异步解码、字体替换、键盘/视口变化都会让内容高度在 scrollToBottom 之后继续变化，
+         导致「看着像最后一条被挤出屏幕 / 与输入框贴在一起」。这里统一在这些时机重新贴底。 */
+      var pinRaf = 0, pinRo = null;
+      function pinToBottom() {
+        if (st.destroyed || !st.followBottom) return;
+        try {
+          listEl.scrollTop = listEl.scrollHeight;
+        } catch (e) { /* 忽略 */ }
+      }
+      function schedulePin() {
+        if (st.destroyed || !st.followBottom || pinRaf) return;
+        pinRaf = window.requestAnimationFrame(function () {
+          pinRaf = 0;
+          pinToBottom();
+          // 再补一帧：图片解码后高度可能二次变化
+          pinRaf = window.requestAnimationFrame(function () { pinRaf = 0; pinToBottom(); });
+        });
+      }
+      function onListResLoad(ev) {
+        var t = ev && ev.target;
+        if (t && (t.tagName === 'IMG' || t.tagName === 'VIDEO')) schedulePin();
+      }
+      function onViewportChange() { schedulePin(); }
+      listEl.addEventListener('load', onListResLoad, true);
+      listEl.addEventListener('error', onListResLoad, true);
+      window.addEventListener('resize', onViewportChange);
+      window.addEventListener('kb-open', onViewportChange);
+      inputEl.addEventListener('focus', function () { setTimeout(schedulePin, 120); });
+      if (window.visualViewport) {
+        window.visualViewport.addEventListener('resize', onViewportChange);
+        window.visualViewport.addEventListener('scroll', onViewportChange);
+      }
+      if (window.ResizeObserver) {
+        pinRo = new ResizeObserver(function () { schedulePin(); });
+        try { pinRo.observe(listEl); } catch (e) { /* 忽略 */ }
+      }
+      setTimeout(schedulePin, 60);
+      setTimeout(schedulePin, 360);
+      try {
+        if (document.fonts && document.fonts.ready && document.fonts.ready.then) {
+          document.fonts.ready.then(function () { setTimeout(schedulePin, 0); });
+        }
+      } catch (e) { /* 忽略 */ }
 
       listEl.addEventListener('click', function (ev) {
         var variantBtn = K.closest(ev.target, '.msg-variant-prev') || K.closest(ev.target, '.msg-variant-next');
@@ -2190,21 +2821,64 @@
         });
       }
 
+      /* ---------------- 群成员加载（v1.4.0） ---------------- */
+      /* 会话人格（v1.4.0）：会话未指定时回退到默认身份 */
+      function resolveSessionPersona(s) {
+        var pid = (s && s.personaId) || '';
+        var P = App.Persona;
+        if (!P || typeof P.ensureDefault !== 'function') {
+          return pid ? D.get('personas', pid).catch(function () { return null; }) : null;
+        }
+        return Promise.resolve().then(function () { return P.ensureDefault(); }).then(function (def) {
+          var id = pid || (def && def.id) || '';
+          return id ? D.get('personas', id).catch(function () { return null; }) : null;
+        }).catch(function () { return null; });
+      }
+
+      function loadMembers() {
+        st.members = st.character ? [st.character] : [];
+        st.memberById = {};
+        if (!st.isGroup) {
+          if (st.character && st.character.id) st.memberById[st.character.id] = st.character;
+          return Promise.resolve();
+        }
+        var G = App.Group;
+        if (!G || typeof G.membersOf !== 'function' || !st.session) return Promise.resolve();
+        var p;
+        try { p = G.membersOf(st.session); } catch (e) { return Promise.resolve(); }
+        return Promise.resolve(p).then(function (list) {
+          var arr = [];
+          if (Array.isArray(list)) arr = list;
+          else if (list && Array.isArray(list.members)) arr = list.members;
+          arr = arr.filter(Boolean);
+          st.members = arr;
+          st.memberById = {};
+          arr.forEach(function (c) { if (c && c.id) st.memberById[c.id] = c; });
+          return null;
+        }).catch(function (err) {
+          console.error('[chat] 群成员加载失败', err);
+        });
+      }
+
       function load() {
         return D.get('sessions', sessionId).then(function (s) {
           if (!s) throw new Error('会话不存在或已被删除');
           st.session = s;
           return Promise.all([
             s.characterId ? D.get('characters', s.characterId).catch(function () { return null; }) : null,
-            s.personaId ? D.get('personas', s.personaId).catch(function () { return null; }) : null,
+            resolveSessionPersona(s),
             s.presetId ? D.get('presets', s.presetId).catch(function () { return null; }) : null
           ]);
         }).then(function (arr) {
           st.character = arr && arr[0] ? arr[0] : null;
           st.persona = arr && arr[1] ? arr[1] : null;
           st.preset = arr && arr[2] ? arr[2] : null;
+          st.isGroup = !!(st.session && st.session.kind === 'group');
           if (!st.persona) st.persona = { id: '', name: '我', description: '', avatar: '' };
           if (!st.preset) st.preset = K.defaultPresetFor(st.character && st.character.type);
+          st.textMode = !!(st.preset && st.preset.mode === 'text');
+          return loadMembers();
+        }).then(function () {
           return resolveProvider();
         }).then(function () {
           return loadMediaState();
@@ -2252,7 +2926,7 @@
           st.session = s;
           return Promise.all([
             s.characterId ? D.get('characters', s.characterId).catch(function () { return null; }) : null,
-            s.personaId ? D.get('personas', s.personaId).catch(function () { return null; }) : null,
+            resolveSessionPersona(s),
             s.presetId ? D.get('presets', s.presetId).catch(function () { return null; }) : null
           ]);
         }).then(function (arr) {
@@ -2263,6 +2937,8 @@
           return resolveProvider();
         }).then(function () {
           return loadMediaState();
+        }).then(function () {
+          return loadMembers();
         }).then(function () {
           if (st.destroyed) return null;
           applyTitle();
@@ -2338,6 +3014,19 @@
       page.onDestroy(function () {
         st.destroyed = true;
         if (typeof st.unsubRoute === 'function') st.unsubRoute();
+        // 贴底跟随的监听清理（v1.4.2）
+        try { listEl.removeEventListener('load', onListResLoad, true); } catch (e) { /* 忽略 */ }
+        try { listEl.removeEventListener('error', onListResLoad, true); } catch (e) { /* 忽略 */ }
+        try { window.removeEventListener('resize', onViewportChange); } catch (e) { /* 忽略 */ }
+        try { window.removeEventListener('kb-open', onViewportChange); } catch (e) { /* 忽略 */ }
+        try {
+          if (window.visualViewport) {
+            window.visualViewport.removeEventListener('resize', onViewportChange);
+            window.visualViewport.removeEventListener('scroll', onViewportChange);
+          }
+        } catch (e) { /* 忽略 */ }
+        try { if (pinRo) pinRo.disconnect(); } catch (e) { /* 忽略 */ }
+        if (pinRaf) { try { window.cancelAnimationFrame(pinRaf); } catch (e) { /* 忽略 */ } pinRaf = 0; }
         var s = st.streaming;
         st.streaming = null;
         if (s) {

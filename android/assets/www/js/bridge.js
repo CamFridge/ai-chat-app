@@ -189,7 +189,8 @@
               } else { resolve({ ok: false }); }
               return;
             case 'ui.pickImage': {
-              pickImageMock().then(function (r) { resolve(r); }, function () { resolve({ dataUri: '', name: '' }); });
+              try { window.__AICHAT_PICK_OPTS__ = args || {}; } catch (e) {}
+              pickImageMock(args).then(function (r) { resolve(r); }, function () { resolve({ dataUri: '', name: '' }); });
               return;
             }
             case 'ui.statusBar':

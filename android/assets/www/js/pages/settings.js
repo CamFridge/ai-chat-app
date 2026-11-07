@@ -51,6 +51,8 @@
         chatStyle: 'wechat',
         chatBg: '',
         userAvatar: '',
+        // v1.4.0 多 persona（我的身份）：当前默认身份名字，用于入口右侧展示
+        personaName: '',
         bubbleEnabled: true,
         bubblePosition: BUBBLE_DEFAULT_POSITION,
         guideProvider: null,
@@ -315,6 +317,17 @@
           state.genProvider =
             findById(state.providers, map.character_gen_provider_id) || state.guideProvider;
           state.genModel = map.character_gen_model || '';
+
+          // v1.4.0 多 persona：入口显示当前默认身份名字（老数据缺默认值时 ensureDefault 会回填）
+          try {
+            if (App.Persona && typeof App.Persona.ensureDefault === 'function') {
+              var defPersona = await App.Persona.ensureDefault();
+              state.personaName = (defPersona && defPersona.name) || '';
+            }
+          } catch (ePersona) {
+            console.error('[settings] 读取默认身份失败', ePersona);
+            state.personaName = '';
+          }
         } catch (e) {
           state.error = e;
         }
@@ -952,6 +965,13 @@
         // 角色与聊天（本次迭代新增：上帝模式开关 + 图片库/发图帮助入口）
         wrap.appendChild(
           group('角色与聊天', [
+            cell({
+              title: '我的身份',
+              sub: '设定你在故事里扮演的身份，聊天时告诉 AI 你是谁',
+              value: state.personaName || '未设置',
+              chev: true,
+              onClick: goPersonas
+            }),
             switchCell({
               title: '上帝模式',
               sub: '开启后角色知道自己只是虚拟角色，可以和你聊这件事',
@@ -1108,6 +1128,27 @@
           ])
         );
 
+        // 诊断（v1.3.4）：运行日志；v1.4.1 增加「界面自检」
+        wrap.appendChild(
+          group('诊断', [
+            cell({
+              title: '运行日志',
+              sub: '运行信息与错误记录（只存本机），可复制发给开发者',
+              value: '查看',
+              chev: true,
+              dataset: { guideFocus: 'logs' },
+              onClick: openLogModal
+            }),
+            cell({
+              title: '界面自检',
+              sub: '采集屏幕尺寸与滚动高度，页面显示异常时复制发给开发者',
+              value: '检测',
+              chev: true,
+              onClick: openDiagModal
+            })
+          ])
+        );
+
         wrap.appendChild(
           el('div', {
             class: 'cfg-footnote',
@@ -1116,6 +1157,217 @@
         );
 
         updateGuide();
+      }
+
+      // ---------- 运行日志（v1.3.4） ----------
+      function logCount() {
+        try { return (App.Log && App.Log.count) ? App.Log.count() : 0; } catch (e) { return 0; }
+      }
+
+      function logText() {
+        try { return (App.Log && App.Log.text) ? App.Log.text() : '（日志模块未加载）'; } catch (e) { return '（读取日志失败：' + e.message + '）'; }
+      }
+
+      function openLogModal() {
+        var box = el('div', { class: 'log-box' });
+        box.appendChild(el('div', {
+          class: 'log-hint',
+          text: '日志只保存在本机，包含运行信息与错误堆栈，不包含 API Key 或聊天正文。反馈问题时点「复制日志」发给开发者即可。'
+        }));
+        var pre = el('pre', { class: 'log-pre' });
+        pre.textContent = logText();
+        box.appendChild(pre);
+
+        var clearBtn = el('button', { class: 'btn ghost log-clear', type: 'button', text: '清空日志' });
+        clearBtn.addEventListener('click', function (ev) {
+          ev.preventDefault();
+          try {
+            if (App.Log && App.Log.clear) App.Log.clear();
+            toast('日志已清空');
+            render();
+          } catch (e) {}
+          if (act && act.close) act.close();
+        });
+        box.appendChild(clearBtn);
+
+        var act = UI.modal({
+          title: '运行日志' + (logCount() ? ' · ' + logCount() + ' 条' : ''),
+          content: box,
+          actions: [
+            {
+              text: '复制日志',
+              class: 'primary',
+              onClick: function (close) {
+                var t = logText();
+                if (t && t.length > 3000) t = t.slice(-3000);
+                try {
+                  App.Util.copyText(t);
+                  toast('日志已复制');
+                } catch (e) {
+                  toast('复制失败，请长按日志手动复制', 'error');
+                }
+                if (close) close();
+                else if (act && act.close) act.close();
+              }
+            },
+            { text: '关闭' }
+          ]
+        });
+      }
+
+      // ---------- 界面自检（v1.4.1） ----------
+      function cssSupports(prop, val) {
+        try {
+          if (!window.CSS || !CSS.supports) return false;
+          return CSS.supports(prop, val || '0px');
+        } catch (e) { return false; }
+      }
+
+      function selSupports(sel) {
+        try {
+          if (!window.CSS || !CSS.supports) return false;
+          return CSS.supports('selector(' + sel + ')');
+        } catch (e) { return false; }
+      }
+
+      function describeNode(sel) {
+        var n = null;
+        try { n = document.querySelector(sel); } catch (e) { n = null; }
+        if (!n) return sel + '：不存在';
+        var r = n.getBoundingClientRect();
+        var cs = window.getComputedStyle(n);
+        return sel + '：' + Math.round(r.width) + '×' + Math.round(r.height) +
+          ' @(' + Math.round(r.left) + ',' + Math.round(r.top) + ')' +
+          ' 内容高=' + n.scrollHeight + '/可见=' + n.clientHeight +
+          ' overflow=' + cs.overflowY + ' pos=' + cs.position + ' disp=' + n.style.display;
+      }
+
+      // v1.4.3：实测 flex 间距（CSS.supports('gap') 在 Chrome 84 以前不可靠）
+      function flexGapMeasured() {
+        try {
+          var box = document.createElement('div');
+          box.style.cssText = 'position:absolute;left:-9999px;top:0;width:1px;' +
+            'display:flex;flex-direction:column;row-gap:7px;';
+          var a = document.createElement('div');
+          var b = document.createElement('div');
+          a.style.cssText = 'height:1px;width:1px;flex:0 0 auto;';
+          b.style.cssText = 'height:1px;width:1px;flex:0 0 auto;';
+          box.appendChild(a);
+          box.appendChild(b);
+          (document.body || document.documentElement).appendChild(box);
+          var d = b.offsetTop - a.offsetTop;
+          if (box.parentNode) box.parentNode.removeChild(box);
+          return d; // 8 = 支持（1px + 7px 间距），1 = 不支持
+        } catch (e) { return -1; }
+      }
+
+      // v1.4.3：消息区体检——行高、是否被压扁、相邻行是否相交
+      function msgDiag() {
+        try {
+          var lists = document.querySelectorAll('.msg-list');
+          var list = null;
+          for (var i = 0; i < lists.length; i++) {
+            if (lists[i].clientHeight > 0) list = lists[i];
+          }
+          if (!list) return '消息区：当前页面没有可见的 .msg-list';
+          var msgs = list.querySelectorAll('.msg');
+          var rows = [];
+          var overlap = 0;
+          var squeezed = 0;
+          var prev = null;
+          for (var j = 0; j < msgs.length; j++) {
+            var r = msgs[j].getBoundingClientRect();
+            if (prev && r.top < prev.bottom - 1) overlap++;
+            if (r.height + 0.5 < msgs[j].scrollHeight) squeezed++;
+            rows.push(Math.round(r.height));
+            prev = r;
+          }
+          var cs0 = msgs[0] ? window.getComputedStyle(msgs[0]) : null;
+          return '消息区：.msg ' + msgs.length + ' 条 行高=[' + rows.join(',') + ']' +
+            ' 相交=' + overlap + ' 被压扁=' + squeezed +
+            ' flexShrink=' + (cs0 ? cs0.flexShrink : '-') +
+            ' noFlexGap=' + (String(document.documentElement.className).indexOf('no-flex-gap') >= 0);
+        } catch (e) { return '消息区：检测失败 ' + (e && e.message ? e.message : e); }
+      }
+
+      function diagText() {
+        var out = [];
+        var ua = navigator.userAgent || '';
+        var m = ua.match(/Chrome\/([0-9]+)/);
+        var vv = window.visualViewport;
+        out.push('时间：' + new Date().toLocaleString());
+        out.push('UA：' + ua);
+        out.push('内核：Chrome ' + (m ? m[1] : '未知') + (window.AndroidBridge ? '（App 内 WebView）' : '（浏览器）'));
+        out.push('屏幕：' + screen.width + '×' + screen.height + ' dpr=' + (window.devicePixelRatio || 1) +
+          ' 方向=' + (window.orientation === undefined ? '-' : window.orientation));
+        out.push('窗口：inner=' + window.innerWidth + '×' + window.innerHeight +
+          ' client=' + document.documentElement.clientWidth + '×' + document.documentElement.clientHeight +
+          '（即 100vh=' + Math.round((window.innerHeight || 1) / 100) + 'px）');
+        out.push('视觉视口：' + (vv ? Math.round(vv.width) + '×' + Math.round(vv.height) + ' scale=' + vv.scale : '不支持'));
+        out.push('能力：dvh=' + cssSupports('height', '100dvh') + ' inset=' + cssSupports('inset', '0px') +
+          ' flex-gap=' + cssSupports('gap', '1px') + ' :has=' + selSupports(':has(*)'));
+        var gapPx = flexGapMeasured();
+        out.push('flex 间距实测：' + (gapPx < 0 ? '测量失败' :
+          (gapPx >= 7 ? '支持（' + gapPx + 'px）' : '不支持（' + gapPx + 'px，已启用外边距兜底）')));
+        out.push(msgDiag());
+        out.push('body 滚动：' + document.body.scrollHeight + '/' + document.documentElement.clientHeight);
+        out.push(describeNode('.shell'));
+        out.push(describeNode('.page-body'));
+        out.push(describeNode('.page-body > .page'));
+        var scrollables = [];
+        try {
+          var list = document.querySelectorAll('.page-body *');
+          for (var i = 0; i < list.length && scrollables.length < 6; i++) {
+            var n = list[i];
+            var cs2 = window.getComputedStyle(n);
+            if ((cs2.overflowY === 'auto' || cs2.overflowY === 'scroll') && n.scrollHeight > n.clientHeight + 2) {
+              scrollables.push('  · ' + (n.className || n.tagName) + '：内容=' + n.scrollHeight + '/可见=' + n.clientHeight + ' 可滚' + (n.scrollTop >= 0 ? '（scrollTop 可用）' : ''));
+            }
+          }
+        } catch (e) {}
+        out.push('可滚动容器：' + (scrollables.length ? '\n' + scrollables.join('\n') : '未发现'));
+        try {
+          if (App.Log && App.Log.text) {
+            var t = App.Log.text();
+            out.push('最近日志：\n' + (t ? t.slice(-800) : '（空）'));
+          }
+        } catch (e) {}
+        return out.join('\n');
+      }
+
+      function openDiagModal() {
+        var box = el('div', { class: 'log-box' });
+        box.appendChild(el('div', {
+          class: 'log-hint',
+          text: '自检只读取屏幕尺寸与页面布局数据，不含聊天内容。页面显示异常（错位/不能滑动）时，点「复制」把结果发给开发者即可定位。'
+        }));
+        var text = '';
+        try { text = diagText(); } catch (e) { text = '自检失败：' + (e && e.message ? e.message : e); }
+        var pre = el('pre', { class: 'log-pre' });
+        pre.textContent = text;
+        box.appendChild(pre);
+
+        var act = UI.modal({
+          title: '界面自检',
+          content: box,
+          actions: [
+            {
+              text: '复制',
+              class: 'primary',
+              onClick: function (close) {
+                try {
+                  App.Util.copyText(text);
+                  toast('自检结果已复制');
+                } catch (e) {
+                  toast('复制失败，请长按文字手动复制', 'error');
+                }
+                if (close) close();
+                else if (act && act.close) act.close();
+              }
+            },
+            { text: '关闭' }
+          ]
+        });
       }
 
       // ---------- 主题 ----------
@@ -1515,6 +1767,18 @@
           goOnboarding();
         } catch (e) {
           toast('清空失败：' + errText(e));
+        }
+      }
+
+      function goPersonas() {
+        try {
+          Promise.resolve(App.Router.push('personas', {})).catch(function (err) {
+            console.error('[settings] 打开我的身份失败', err);
+            toast('无法进入我的身份');
+          });
+        } catch (e) {
+          console.error('[settings] 打开我的身份失败', e);
+          toast('无法进入我的身份');
         }
       }
 

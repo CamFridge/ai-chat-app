@@ -47,10 +47,17 @@
   /* ---------------- 选择/读取 ---------------- */
 
   // 从相册选择图片（原生或浏览器 mock 均可用）
-  Media.pickImage = function () {
+  Media.pickImage = function (opts) {
+    opts = opts || {};
+    var args = {};
+    if (opts.maxSide) args.maxSide = Math.max(64, Math.min(2048, Math.round(opts.maxSide)));
+    if (opts.maxWidth) args.maxWidth = Math.max(320, Math.min(1600, Math.round(opts.maxWidth)));
+    if (opts.quality) args.quality = Math.max(40, Math.min(95, Math.round(opts.quality)));
+    if (opts.slice) args.slice = true;
+    var maxBytes = Number(opts.maxBytes) > 0 ? Number(opts.maxBytes) : MAX_IMAGE_DATA;
     return Promise.resolve()
       .then(function () {
-        return App.Bridge.call('ui.pickImage', {}, { timeoutMs: 120000 });
+        return App.Bridge.call('ui.pickImage', args, { timeoutMs: 120000 });
       })
       .then(function (res) {
         res = res || {};
@@ -59,27 +66,39 @@
         if (!/^data:image\//i.test(dataUri)) {
           return Promise.reject(new Error('选择的文件不是图片'));
         }
-        if (dataUri.length > MAX_IMAGE_DATA) {
-          return Promise.reject(new Error('图片太大了，请选择小于约 2MB 的图片'));
+        // 长截图可能由原生切成多段（parts），逐段校验并保持顺序
+        var parts = [];
+        if (res.parts && res.parts.length) {
+          for (var i = 0; i < res.parts.length; i++) {
+            var pu = String(res.parts[i] || '');
+            if (!/^data:image\//i.test(pu)) return Promise.reject(new Error('长截图分段读取失败，请重试'));
+            if (bytesOfDataUri(pu) < 64) return Promise.reject(new Error('长截图分段读取失败，请重试'));
+            parts.push(pu);
+          }
         }
-        if (bytesOfDataUri(dataUri) < 64) {
-          return Promise.reject(new Error('图片读取失败，请重试'));
+        var total = parts.length ? parts.reduce(function (a, u) { return a + bytesOfDataUri(u); }, 0) : bytesOfDataUri(dataUri);
+        if (total > maxBytes) {
+          return Promise.reject(new Error('图片太大了，请选择小于约 ' + Math.max(1, Math.round(maxBytes / 1024 / 1024)) + 'MB 的图片'));
         }
         return {
           kind: 'image',
           name: safeText(res.name, 80) || Media.guessName('图片'),
           mime: mimeOfDataUri(dataUri),
-          size: bytesOfDataUri(dataUri),
-          dataUri: dataUri
+          size: total,
+          dataUri: dataUri,
+          parts: parts,
+          slices: parts.length || 1
         };
       });
   };
 
   // 选择文本文件（内容作为文本附件随消息发送）
-  Media.pickFile = function () {
+  Media.pickFile = function (opts) {
+    opts = opts || {};
+    var accept = opts.accept || 'text/*,.md,.txt,.json,.csv,.log,.js,.html';
     return Promise.resolve()
       .then(function () {
-        return App.Bridge.call('file.import', { accept: 'text/*,.md,.txt,.json,.csv,.log,.js,.html' }, { timeoutMs: 120000 });
+        return App.Bridge.call('file.import', { accept: accept }, { timeoutMs: 120000 });
       })
       .then(function (res) {
         res = res || {};
@@ -205,8 +224,10 @@
     var UI = App.UI;
     if (!UI || !UI.modal) return Promise.resolve(false);
     var body = UI.el('div', { class: 'media-preview' });
+    var scroll = UI.el('div', { class: 'media-preview-scroll' });
     var img = UI.el('img', { class: 'media-preview-img', attrs: { src: dataUri, alt: name || '图片' } });
-    body.appendChild(img);
+    scroll.appendChild(img);
+    body.appendChild(scroll);
     if (name) body.appendChild(UI.el('div', { class: 'media-preview-name', text: name }));
     return UI.modal({
       title: name || '图片预览',

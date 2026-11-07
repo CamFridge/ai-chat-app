@@ -40,6 +40,30 @@
     return (v === 'female' || v === 'male' || v === 'other') ? v : '';
   }
 
+  var MAX_SCENES = 6;
+  var MAX_SCENE_LEN = 200;
+
+  function normalizeScenarios(list) {
+    if (!Array.isArray(list)) return [];
+    var out = [];
+    list.forEach(function (s) {
+      var t = String(s == null ? '' : s).trim();
+      if (!t) return;
+      if (t.length > MAX_SCENE_LEN) t = t.slice(0, MAX_SCENE_LEN);
+      out.push(t);
+    });
+    return out.slice(0, MAX_SCENES);
+  }
+
+  function ensureScenarios(card) {
+    if (!card || typeof card !== 'object') return card;
+    var list = normalizeScenarios(card.scenarios);
+    if (!list.length && card.scenario) list = normalizeScenarios([card.scenario]);
+    card.scenarios = list;
+    card.scenario = list[0] || '';
+    return card;
+  }
+
   function genderText(v) {
     var g = normalizeGender(v);
     if (g === 'female') return '女';
@@ -77,6 +101,7 @@
     godMode: false,    // 上帝模式：TA 知道自己只是虚拟角色
     habits: '',
     extra: '',
+    scenarios: [],     // 0~6 条可保存场景，留空由上下文判断
 
     providers: [],
     genProviderId: '',
@@ -91,6 +116,8 @@
     busy: false,
     manual: false,
     genError: null,
+    importing: false,
+    importLabel: '',
 
     progress: null,
     progressSlot: null,
@@ -130,6 +157,7 @@
       godMode: !!state.godMode,
       habits: state.habits,
       extra: state.extra,
+      scenarios: state.scenarios.slice(),
       card: state.card,
       versions: state.versions,
       versionIndex: state.versionIndex,
@@ -170,10 +198,13 @@
     state.godMode = d.godMode != null ? !!d.godMode : !!(state.card && state.card.godMode);
     state.habits = d.habits || '';
     state.extra = d.extra || '';
+    state.scenarios = normalizeScenarios(d.scenarios || (d.card && d.card.scenarios) || []);
     state.card = d.card || null;
     if (state.card) {
       ensureAltGreetings(state.card);
+      ensureScenarios(state.card);
       state.card.gender = state.gender || normalizeGender(state.card.gender);
+      if (!state.scenarios.length && state.card.scenarios.length) state.scenarios = state.card.scenarios.slice();
     }
     state.versions = Array.isArray(d.versions) ? d.versions : [];
     state.versionIndex = typeof d.versionIndex === 'number' ? d.versionIndex : state.versions.length - 1;
@@ -302,8 +333,9 @@
     }
 
     if (state.step === 1) {
-      var next1 = UI.el('button', { class: 'btn primary', type: 'button', text: '下一步' });
+      var next1 = UI.el('button', { class: 'btn primary', type: 'button', text: state.importing ? '导入中…' : '下一步' });
       next1.addEventListener('click', function () { goStep(2); });
+      if (state.importing) next1.disabled = true;
       foot.appendChild(next1);
     } else if (state.step === 2) {
       var next2 = UI.el('button', { class: 'btn primary', type: 'button', text: '下一步' });
@@ -428,9 +460,327 @@
       body.appendChild(assistantPickerBody());
     } else {
       body.appendChild(UI.el('div', { class: 'ck-info-box', text: '陪聊角色只需要名称和一句性格，剩下的交给 AI 补全。' }));
+      body.appendChild(importPersonaBox());
     }
 
     return body;
+  }
+
+  /* ---- 从文件 / 截图导入人格 ---- */
+
+  function importPersonaBox() {
+    var box = UI.el('div', { class: 'ck-import-box' });
+    box.appendChild(UI.el('div', { class: 'ck-step-desc', text: '已经有现成设定？可以导入 .md / .prompt 设定文件或 DeepSeek 聊天记录，也可以直接传聊天截图，让 AI 帮你整理人格。也可以直接导入 SillyTavern V2 角色卡（.json）。' }));
+
+    var fileBtn = UI.el('button', {
+      class: 'btn ghost block', type: 'button',
+      attrs: { 'data-guide-tap': 'importPersona' }
+    }, UI.el('span', { html: UI.icon('upload', 18) }), UI.el('span', { text: state.importing ? (state.importLabel || '正在整理…') : '导入设定文件 / 聊天记录' }));
+    fileBtn.disabled = !!state.importing || !!state.busy;
+    fileBtn.addEventListener('click', function () { importPersonaFile(); });
+
+    var imgBtn = UI.el('button', {
+      class: 'btn ghost block', type: 'button',
+      attrs: { 'data-guide-tap': 'importPersonaImage' },
+      style: 'margin-top:8px'
+    }, UI.el('span', { html: UI.icon('upload', 18) }), UI.el('span', { text: state.importing ? '正在识别截图…' : '上传聊天截图，AI 识别人格' }));
+    imgBtn.disabled = !!state.importing || !!state.busy;
+    imgBtn.addEventListener('click', function () { importPersonaImage(); });
+
+    var textBtn = UI.el('button', {
+      class: 'btn ghost block', type: 'button',
+      attrs: { 'data-guide-tap': 'importPersonaText' },
+      style: 'margin-top:8px'
+    }, UI.el('span', { html: UI.icon('edit', 18) }), UI.el('span', { text: state.importing ? '正在整理…' : '粘贴长文字，自动生成人格' }));
+    textBtn.disabled = !!state.importing || !!state.busy;
+    textBtn.addEventListener('click', function () { importPersonaText(); });
+
+    // SillyTavern / TavernAI V2 角色卡直读导入（不经过 AI 整理）
+    var tavernBtn = UI.el('button', {
+      class: 'btn ghost block', type: 'button',
+      attrs: { 'data-guide-tap': 'importTavern' },
+      style: 'margin-top:8px'
+    }, UI.el('span', { html: UI.icon('upload', 18) }), UI.el('span', { text: '导入角色卡（SillyTavern V2）' }));
+    tavernBtn.disabled = !!state.importing || !!state.busy;
+    tavernBtn.addEventListener('click', function () { importTavernCard(); });
+
+    box.appendChild(fileBtn);
+    box.appendChild(imgBtn);
+    box.appendChild(textBtn);
+    box.appendChild(tavernBtn);
+    if (state.importing) {
+      box.appendChild(UI.el('div', { class: 'ck-step-desc', text: '正在读取并整理，请稍候…（不会修改已填内容，完成后进入预览）' }));
+      box.appendChild(UI.el('div', { class: 'ck-import-status', attrs: { role: 'status', 'aria-live': 'polite' } }));
+    }
+    if (state.importError) {
+      var errBox = UI.el('div', { class: 'ck-import-error', attrs: { role: 'alert' } });
+      errBox.appendChild(UI.el('div', { class: 'ck-import-error-title', text: '没有识别出结果' }));
+      errBox.appendChild(UI.el('div', { class: 'ck-import-error-text', text: state.importError }));
+      box.appendChild(errBox);
+    }
+    return box;
+  }
+
+  function importGen() {
+    var gen = Kit.resolveGen(state.providers, state.genProviderId, state.genModel);
+    if (!gen.ok) {
+      UI.toast(gen.reason || '请先在「设置 → 补全设置」里配置一个可用的 API', 'error');
+      return null;
+    }
+    state.genProviderId = gen.provider.id;
+    state.genModel = gen.model;
+    return gen;
+  }
+
+  var importTimer = null;
+
+  function stopImportTimer() {
+    if (importTimer) { clearInterval(importTimer); importTimer = null; }
+  }
+
+  function paintImportStatus() {
+    var node = document.querySelector('.ck-import-status');
+    if (!node) return;
+    if (!state.importing) { node.textContent = ''; return; }
+    var sec = Math.max(0, Math.round((Date.now() - (state.importStartAt || Date.now())) / 1000));
+    node.textContent = (state.importLabel || '正在整理…') + '（已用 ' + sec + ' 秒）';
+  }
+
+  function beginImport(label) {
+    state.importing = true;
+    state.importError = '';
+    state.importLabel = label || '正在整理…';
+    state.importStartAt = Date.now();
+    render();
+    stopImportTimer();
+    importTimer = setInterval(paintImportStatus, 1000);
+  }
+
+  function endImport() {
+    stopImportTimer();
+    state.importing = false;
+    state.importLabel = '';
+    state.importStartAt = 0;
+    render();
+  }
+
+  function importFail(message) {
+    stopImportTimer();
+    state.importing = false;
+    state.importLabel = '';
+    state.importStartAt = 0;
+    state.importError = message || '导入失败';
+    render();
+  }
+
+  function applyImportedCard(card, label, gen, raw) {
+    if (!card) return;
+    ensureAltGreetings(card);
+    ensureScenarios(card);
+    applyGenderFromUser(card);
+    if (!state.scenarios.length && card.scenarios.length) state.scenarios = card.scenarios.slice();
+    state.card = card;
+    state.raw = raw || '';
+    state.meta = { providerId: gen.provider.id, model: gen.model, at: Date.now() };
+    state.versions = [{
+      card: Kit.clone(card),
+      at: state.meta.at,
+      label: '导入 · ' + label,
+      providerId: gen.provider.id,
+      model: gen.model
+    }];
+    state.versionIndex = 0;
+    state.step = 5;
+    state.genError = null;
+    saveDraftNow();
+    render();
+    Kit.notifyData('characters');
+    UI.toast('已从「' + label + '」整理出人格，请检查后保存', 'ok');
+  }
+
+  function importPersonaFile() {
+    if (state.importing || state.busy) return;
+    var gen = importGen();
+    if (!gen) return;
+    if (!App.Media || typeof App.Media.pickFile !== 'function') {
+      UI.toast('当前版本不支持文件导入', 'error');
+      return;
+    }
+    App.Media.pickFile({ accept: '.md,.prompt,.txt,.json,.jsonl,text/*' }).then(function (file) {
+      if (!file || !file.text) return;
+      var chat = null;
+      if (App.Import && typeof App.Import.parseChat === 'function') {
+        var parsed = App.Import.parseChat(file.text, file.name);
+        if (parsed && parsed.ok) chat = parsed;
+      }
+      var payload = file.text;
+      var sourceName = file.name || '文件';
+      if (chat) {
+        payload = '以下是「' + (chat.title || sourceName) + '」的聊天记录（用户与角色）：\n' + App.Import.transcript(chat.entries);
+        sourceName = '聊天记录 ' + (chat.title || '');
+      }
+      beginImport('正在整理「' + (file.name || '文件') + '」…');
+      return P.importPersona({
+        text: payload,
+        filename: sourceName,
+        provider: gen.provider,
+        model: gen.model
+      }).then(function (res) {
+        endImport();
+        if (res && res.ok && res.card) {
+          applyImportedCard(res.card, file.name || '文件', gen, res.raw);
+          return;
+        }
+        var fallback = (App.Import && typeof App.Import.fallbackCard === 'function')
+          ? App.Import.fallbackCard({ entries: chat ? chat.entries : null, text: file.text, title: file.name })
+          : null;
+        if (fallback) {
+          applyImportedCard(fallback, file.name || '文件', gen, (res && res.raw) || '');
+          UI.toast('AI 没能整理成完整角色卡，已生成草稿供你修改', 'info');
+        } else {
+          UI.toast((res && res.error && res.error.message) || '导入失败，请换个文件重试', 'error');
+        }
+      });
+    }).catch(function (err) {
+      endImport();
+      console.warn('[characterCreate] 导入人格失败', err);
+      UI.toast((err && err.message) || '读取文件失败', 'error');
+    });
+  }
+
+  function importPersonaText() {
+    if (state.importing || state.busy) return;
+    var gen = importGen();
+    if (!gen) return;
+    var wrap = UI.el('div', { class: 'ck-text-import' });
+    wrap.appendChild(UI.el('div', {
+      class: 'ck-step-desc',
+      text: '把角色设定、旧聊天记录、或者一段长描述粘贴进来（至少 20 个字），AI 会整理成角色卡。不会自动保存。'
+    }));
+    var ta = UI.el('textarea', {
+      class: 'textarea ck-text-import-input',
+      attrs: { placeholder: '例如：她叫林夏，是旧书店的店员，性格开朗直率，习惯睡前喝一杯热牛奶……', rows: '8' }
+    });
+    wrap.appendChild(ta);
+    var modal = UI.modal({
+      title: '粘贴长文字生成人格',
+      content: wrap,
+      actions: [
+        { text: '取消' },
+        { text: '生成', class: 'primary', onClick: function (close) {
+          var text = String(ta.value || '').trim();
+          if (text.length < 20) { UI.toast('内容太短了，至少写 20 个字', 'error'); return; }
+          close();
+          beginImport('正在整理长文字…');
+          P.importPersona({
+            text: text,
+            filename: '粘贴的文字',
+            provider: gen.provider,
+            model: gen.model
+          }).then(function (res) {
+            endImport();
+            if (res && res.ok && res.card) {
+              applyImportedCard(res.card, '粘贴的文字', gen, res.raw);
+              return;
+            }
+            var fallback = (App.Import && typeof App.Import.fallbackCard === 'function')
+              ? App.Import.fallbackCard({ text: text, title: '粘贴的文字' })
+              : null;
+            if (fallback) {
+              applyImportedCard(fallback, '粘贴的文字', gen, (res && res.raw) || '');
+              UI.toast('AI 没能整理成完整角色卡，已生成草稿供你修改', 'info');
+            } else {
+              UI.toast((res && res.error && res.error.message) || '整理失败，请稍后重试', 'error');
+            }
+          }).catch(function (err) {
+            endImport();
+            console.warn('[characterCreate] 长文字生成人格失败', err);
+            UI.toast((err && err.message) || '整理失败，请稍后重试', 'error');
+          });
+        } }
+      ]
+    });
+    setTimeout(function () { try { ta.focus(); } catch (e) {} }, 120);
+    return modal;
+  }
+
+  function importPersonaImage() {
+    if (state.importing || state.busy) return;
+    var gen = importGen();
+    if (!gen) return;
+    if (!App.Media || typeof App.Media.pickImage !== 'function') {
+      UI.toast('当前版本不支持选择图片', 'error');
+      return;
+    }
+    App.Media.pickImage({ maxWidth: 1200, quality: 92, slice: true, maxBytes: 20 * 1024 * 1024 }).then(function (img) {
+      if (!img) return;
+      if (!img.dataUri && !(img.parts && img.parts.length)) {
+        UI.toast('没有读到图片，请重试', 'error');
+        return;
+      }
+      beginImport('正在识别截图…');
+      var parts = (img.parts && img.parts.length) ? img.parts.slice() : null;
+      var prep;
+      if (parts) {
+        prep = Promise.resolve(parts);
+      } else if (App.Import && typeof App.Import.sliceImage === 'function') {
+        prep = App.Import.sliceImage(img.dataUri, { maxWidth: 1100 }).catch(function () { return [img.dataUri]; });
+      } else {
+        prep = Promise.resolve([img.dataUri]);
+      }
+      return prep.then(function (dataUris) {
+        dataUris = (dataUris || []).filter(function (u) { return /^data:image\//.test(String(u || '')); });
+        if (!dataUris.length) dataUris = [img.dataUri];
+        return P.importPersonaFromImage({ dataUris: dataUris, dataUri: dataUris[0], provider: gen.provider, model: gen.model });
+      }).then(function (res) {
+        if (res && res.ok && res.card) {
+          var keys = ['name', 'personality', 'habits', 'background', 'speechStyle', 'firstMessage'];
+          var filled = 0;
+          for (var i = 0; i < keys.length; i++) {
+            if (String(res.card[keys[i]] || '').trim()) filled++;
+          }
+          if (filled < 2) {
+            endImport();
+            importFail('模型没有从截图里读到可用的人格信息。可能是截图不够清晰（建议 800px 以上的原图），或当前模型不支持图片输入。可以在「设置 → 补全设置」换一个支持视觉的模型后重试。');
+            return;
+          }
+          endImport();
+          applyImportedCard(res.card, '聊天截图', gen, res.raw);
+          return;
+        }
+        endImport();
+        var info = (res && res.error && res.error.message) || '识图失败';
+        importFail(info + '。如果截图较模糊或文字太小，建议换一张更清晰的原图；也可以换一个支持图片输入的模型后重试。');
+      });
+    }).catch(function (err) {
+      endImport();
+      console.warn('[characterCreate] 截图导入失败', err);
+      UI.toast((err && err.message) || '读取图片失败', 'error');
+    });
+  }
+
+  /* 直接导入 SillyTavern / TavernAI V2 角色卡：预览确认后落库并跳到编辑页 */
+  function importTavernCard() {
+    if (state.importing || state.busy) return null;
+    if (!App.Tavern || typeof App.Tavern.openImport !== 'function') {
+      UI.toast('角色卡导入功能暂不可用，请重启 App 后再试', 'error');
+      return null;
+    }
+    try {
+      var p = App.Tavern.openImport();
+      if (p && typeof p.catch === 'function') {
+        return p.catch(function (err) {
+          console.error('[characterCreate] 导入角色卡失败', err);
+          UI.toast('导入角色卡失败：' + ((err && err.message) || '未知错误'), 'error');
+          return null;
+        });
+      }
+      return p;
+    } catch (err2) {
+      console.error('[characterCreate] 导入角色卡异常', err2);
+      UI.toast('导入角色卡失败', 'error');
+      return null;
+    }
   }
 
   function assistantPickerBody() {
@@ -766,6 +1116,62 @@
     return card;
   }
 
+  function scenarioEditor() {
+    var box = UI.el('div', { class: 'field ck-scene-field' });
+    box.appendChild(UI.el('label', {},
+      UI.el('span', { text: '场景（可多条，可留空）' })
+    ));
+    box.appendChild(UI.el('div', {
+      class: 'hint',
+      text: '保存多个常去的地点/情境，聊天开始时可以挑一个；留空则由角色结合上下文自由判断。'
+    }));
+    var listBox = UI.el('div', { class: 'ck-scene-list' });
+    state.scenarios.forEach(function (text, i) {
+      var row = UI.el('div', { class: 'ck-scene-row' });
+      var ta = UI.el('textarea', {
+        class: 'textarea',
+        attrs: { rows: 2, placeholder: '例如：雨夜的旧书店，只开了柜台一盏灯' }
+      });
+      ta.value = text || '';
+      ta.addEventListener('input', function () {
+        state.scenarios[i] = ta.value;
+        saveSoon();
+      });
+      var del = UI.el('button', {
+        class: 'icon-btn ck-scene-del',
+        type: 'button',
+        attrs: { 'aria-label': '删除这个场景', title: '删除' },
+        html: UI.icon('close', 16)
+      });
+      del.addEventListener('click', function () {
+        state.scenarios.splice(i, 1);
+        saveDraftNow();
+        render();
+      });
+      row.appendChild(ta);
+      row.appendChild(del);
+      listBox.appendChild(row);
+    });
+    box.appendChild(listBox);
+    var add = UI.el('button', {
+      class: 'btn ghost small ck-scene-add',
+      type: 'button',
+      text: '＋ 添加场景'
+    });
+    add.addEventListener('click', function () {
+      if (state.scenarios.length >= MAX_SCENES) {
+        UI.toast('最多保存 ' + MAX_SCENES + ' 个场景');
+        return;
+      }
+      state.scenarios.push('');
+      saveDraftNow();
+      render();
+    });
+    box.appendChild(add);
+    box.appendChild(UI.el('div', { class: 'ck-scene-count', text: state.scenarios.length + ' / ' + MAX_SCENES }));
+    return box;
+  }
+
   function step3Body() {
     var body = UI.el('div', {});
     body.appendChild(UI.el('div', { class: 'ck-step-head' },
@@ -798,6 +1204,9 @@
 
     // 上帝模式（默认关）
     form.appendChild(godModeCreateRow());
+
+    // 场景（可多条，可留空）
+    form.appendChild(scenarioEditor());
 
     form.appendChild(lightField({
       label: '习惯（可空）',
@@ -1272,6 +1681,8 @@
     card.personality = String(state.personality || '').trim();
     card.gender = normalizeGender(state.gender);
     card.godMode = !!state.godMode;
+    card.scenarios = normalizeScenarios(state.scenarios);
+    card.scenario = card.scenarios[0] || '';
     card.habits = String(state.habits || '').trim();
     card.background = '';
     if (state.type === 'assistant') {
@@ -1461,7 +1872,8 @@
         { key: 'background', label: '背景', multiline: true },
         { key: 'speechStyle', label: '说话风格', multiline: true },
         { key: 'catchphrases', label: '口头禅', multiline: true },
-        { key: 'scenario', label: '场景', multiline: true },
+        { key: 'scenarios', label: '场景（可留空）', list: true },
+        { key: 'scenario', label: '主场景', multiline: true },
         { key: 'firstMessage', label: '开场白', multiline: true },
         { key: 'exampleDialogues', label: '示例对话', dialogs: true }
       ]);
@@ -1676,7 +2088,8 @@
       background: card.background || '',
       speechStyle: card.speechStyle || '',
       catchphrases: card.catchphrases || '',
-      scenario: card.scenario || '',
+      scenarios: normalizeScenarios(card.scenarios && card.scenarios.length ? card.scenarios : (card.scenario ? [card.scenario] : [])),
+      scenario: (normalizeScenarios(card.scenarios && card.scenarios.length ? card.scenarios : (card.scenario ? [card.scenario] : []))[0]) || '',
       firstMessage: card.firstMessage || '',
       alternateGreetings: normalizeAltGreetings(card.alternateGreetings),
       exampleDialogues: Array.isArray(card.exampleDialogues) ? card.exampleDialogues : [],

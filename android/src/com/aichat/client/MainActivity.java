@@ -5,6 +5,8 @@ import android.app.Activity;
 import android.content.Intent;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
+import android.graphics.BitmapRegionDecoder;
+import android.graphics.Rect;
 import android.graphics.Color;
 import android.net.Uri;
 import android.os.Build;
@@ -25,6 +27,7 @@ import android.webkit.WebViewClient;
 import android.widget.FrameLayout;
 import android.widget.Toast;
 
+import org.json.JSONArray;
 import org.json.JSONObject;
 
 import java.io.ByteArrayInputStream;
@@ -35,6 +38,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Locale;
 import java.util.Map;
@@ -55,6 +59,9 @@ public class MainActivity extends Activity {
     private WebView webView;
     private Bridge bridge;
     private String pendingImageId;
+    private int pendingImageMaxSide = 1024;
+    private int pendingImageQuality = 88;
+    private boolean pendingImageSlice = false;
     private String pendingImportId;
 
     @Override
@@ -202,7 +209,13 @@ public class MainActivity extends Activity {
     }
 
     /* ---------------- 图片选择（头像） ---------------- */
-    void pickImage(final String requestId) {
+    void pickImage(final String requestId) { pickImage(requestId, 1024, 88, false); }
+
+    void pickImage(final String requestId, final int maxSide, final int quality) {
+        pickImage(requestId, maxSide, quality, false);
+    }
+
+    void pickImage(final String requestId, final int maxSide, final int quality, final boolean slice) {
         runOnUiThread(new Runnable() {
             @Override
             public void run() {
@@ -210,6 +223,9 @@ public class MainActivity extends Activity {
                     bridge.deliverError(pendingImageId, "cancel", "上一次选择尚未结束");
                 }
                 pendingImageId = requestId;
+                pendingImageMaxSide = Math.max(64, Math.min(2048, maxSide));
+                pendingImageQuality = Math.max(40, Math.min(95, quality));
+                pendingImageSlice = slice;
                 Intent intent = new Intent(Intent.ACTION_GET_CONTENT);
                 intent.setType("image/*");
                 intent.addCategory(Intent.CATEGORY_OPENABLE);
@@ -285,12 +301,18 @@ public class MainActivity extends Activity {
         if (requestCode == REQ_IMAGE) {
             String id = pendingImageId;
             pendingImageId = null;
+            int maxSide = pendingImageMaxSide;
+            int quality = pendingImageQuality;
+            boolean slice = pendingImageSlice;
+            pendingImageMaxSide = 1024;
+            pendingImageQuality = 88;
+            pendingImageSlice = false;
             if (id == null) return;
             if (resultCode != RESULT_OK || data == null || data.getData() == null) {
                 bridge.deliverError(id, "cancel", "已取消选择");
                 return;
             }
-            handleImageResult(id, data.getData());
+            handleImageResult(id, data.getData(), maxSide, quality, slice);
         } else if (requestCode == REQ_IMPORT) {
             String id = pendingImportId;
             pendingImportId = null;
@@ -303,10 +325,18 @@ public class MainActivity extends Activity {
         }
     }
 
-    private void handleImageResult(final String id, final Uri uri) {
+    private void handleImageResult(final String id, final Uri uri, final int targetMaxSide, final int quality, final boolean slice) {
         new Thread(new Runnable() {
             @Override
             public void run() {
+                if (slice) {
+                    try {
+                        handleSliceResult(id, uri, targetMaxSide, quality);
+                    } catch (Exception e) {
+                        try { bridge.deliverError(id, "unknown", "长截图处理失败：" + e.getMessage()); } catch (Exception ignore) {}
+                    }
+                    return;
+                }
                 try {
                     InputStream is = getContentResolver().openInputStream(uri);
                     BitmapFactory.Options opts = new BitmapFactory.Options();
@@ -314,9 +344,13 @@ public class MainActivity extends Activity {
                     BitmapFactory.decodeStream(is, null, opts);
                     if (is != null) is.close();
 
+                    int target = Math.max(64, Math.min(2048, targetMaxSide));
                     int sample = 1;
                     int maxSide = Math.max(opts.outWidth, opts.outHeight);
-                    while (maxSide / sample > 480) sample *= 2;
+                    // 先解到不小于目标尺寸，再等比缩小，避免把截图解成糊图
+                    while (sample * 2 <= maxSide && (maxSide / (sample * 2)) >= target) sample *= 2;
+                    // 内存保护：解码后的像素总数控制在 800 万以内
+                    while ((opts.outWidth / sample) * (opts.outHeight / sample) > 8000000) sample *= 2;
 
                     BitmapFactory.Options opts2 = new BitmapFactory.Options();
                     opts2.inSampleSize = sample;
@@ -328,7 +362,6 @@ public class MainActivity extends Activity {
                         return;
                     }
                     int w = bmp.getWidth(), h = bmp.getHeight();
-                    int target = 320;
                     if (Math.max(w, h) > target) {
                         float scale = target / (float) Math.max(w, h);
                         Bitmap scaled = Bitmap.createScaledBitmap(bmp, Math.max(1, Math.round(w * scale)), Math.max(1, Math.round(h * scale)), true);
@@ -336,7 +369,7 @@ public class MainActivity extends Activity {
                         bmp = scaled;
                     }
                     ByteArrayOutputStream bos = new ByteArrayOutputStream();
-                    bmp.compress(Bitmap.CompressFormat.JPEG, 82, bos);
+                    bmp.compress(Bitmap.CompressFormat.JPEG, Math.max(40, Math.min(95, quality)), bos);
                     bmp.recycle();
                     String b64 = Base64.encodeToString(bos.toByteArray(), Base64.NO_WRAP);
                     JSONObject r = new JSONObject();
@@ -348,6 +381,72 @@ public class MainActivity extends Activity {
                 }
             }
         }).start();
+    }
+
+    /** 长截图：按宽度保持清晰，纵向切成若干条带，逐段 JPEG 编码。 */
+    private void handleSliceResult(final String id, final Uri uri, final int targetMaxWidth, final int quality) throws Exception {
+        int targetW = Math.max(360, Math.min(1600, targetMaxWidth));
+        InputStream is = getContentResolver().openInputStream(uri);
+        BitmapRegionDecoder dec = BitmapRegionDecoder.newInstance(is, false);
+        if (is != null) is.close();
+        if (dec == null) {
+            bridge.deliverError(id, "unknown", "图片读取失败");
+            return;
+        }
+        try {
+            int srcW = dec.getWidth();
+            int srcH = dec.getHeight();
+            if (srcW <= 0 || srcH <= 0) {
+                bridge.deliverError(id, "unknown", "图片尺寸异常");
+                return;
+            }
+            float scale = Math.min(1f, targetW / (float) srcW);
+            int outW = Math.max(1, Math.round(srcW * scale));
+            int wantH = Math.max(1, outW * 2);
+            int overlap = Math.max(1, Math.round(wantH * 0.06f));
+            int n = (int) Math.ceil(srcH / (double) Math.max(1, wantH));
+            if (n < 1) n = 1;
+            if (n > 8) n = 8;
+            int sliceH = (int) Math.ceil((srcH + (long) overlap * (n - 1)) / (double) n);
+            if (sliceH < 16) sliceH = 16;
+            int q = Math.max(50, Math.min(95, quality));
+            JSONArray parts = new JSONArray();
+            int y = 0;
+            for (int i = 0; i < n && y < srcH; i++) {
+                int h = Math.min(sliceH, srcH - y);
+                if (h <= 0) break;
+                Bitmap part = dec.decodeRegion(new Rect(0, y, srcW, y + h), null);
+                if (part == null) break;
+                int pw = part.getWidth(), ph = part.getHeight();
+                if (pw != outW) {
+                    int oh = Math.max(1, Math.round(ph * (outW / (float) pw)));
+                    Bitmap scaled = Bitmap.createScaledBitmap(part, outW, oh, true);
+                    if (scaled != part) part.recycle();
+                    part = scaled;
+                }
+                ByteArrayOutputStream bos = new ByteArrayOutputStream();
+                part.compress(Bitmap.CompressFormat.JPEG, q, bos);
+                part.recycle();
+                String b64 = Base64.encodeToString(bos.toByteArray(), Base64.NO_WRAP);
+                parts.put("data:image/jpeg;base64," + b64);
+                y += sliceH - overlap;
+                if (i == n - 1) break;
+            }
+            if (parts.length() == 0) {
+                bridge.deliverError(id, "unknown", "长截图切片失败");
+                return;
+            }
+            JSONObject r = new JSONObject();
+            r.put("dataUri", parts.getString(0));
+            r.put("parts", parts);
+            r.put("slices", parts.length());
+            r.put("width", outW);
+            r.put("height", outW > 0 ? Math.round(srcH * (outW / (float) srcW)) : srcH);
+            r.put("name", "screenshot.jpg");
+            bridge.deliver(id, true, r);
+        } finally {
+            dec.recycle();
+        }
     }
 
     private void handleImportResult(final String id, final Uri uri) {

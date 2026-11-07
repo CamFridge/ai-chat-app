@@ -36,24 +36,28 @@ $env:PATH = (Join-Path $JavaHome 'bin') + ';' + $env:PATH
 $env:JAVA_HOME = $JavaHome
 
 $Build = Join-Path $Root 'build'
-$VersionCode = '7'
-$VersionName = '1.3.0'
-$Gen = Join-Path $Build 'gen'
-$Classes = Join-Path $Build 'classes'
-$DexDir = Join-Path $Build 'dex'
-$ResZip = Join-Path $Build 'res.zip'
-$BaseApk = Join-Path $Build 'base.apk'
-$Unsigned = Join-Path $Build 'unsigned.apk'
-$Aligned = Join-Path $Build 'aligned.apk'
+# 中间产物统一放 build/tmp/，避免和最终安装包混在一起（别把 unsigned/aligned 当成品装）
+$Tmp = Join-Path $Build 'tmp'
+$VersionCode = '16'
+$VersionName = '1.4.3'
+$Gen = Join-Path $Tmp 'gen'
+$Classes = Join-Path $Tmp 'classes'
+$DexDir = Join-Path $Tmp 'dex'
+$ResZip = Join-Path $Tmp 'res.zip'
+$BaseApk = Join-Path $Tmp 'base.apk'
+$Unsigned = Join-Path $Tmp 'unsigned.apk'
+$Aligned = Join-Path $Tmp 'aligned.apk'
 $OutApk = Join-Path $Build ("AI-Chat-$VersionName" + $(if ($DebugMode) { '-debug.apk' } else { '.apk' }))
 $Keystore = Join-Path $Root 'keystore/aichat-release.jks'
 $KsAlias = 'aichat'
-$KsPass = 'aichat2026'
+# 口令不写入仓库：构建前设置环境变量 AICHAT_KS_PASS（指向 keystore/aichat-release.jks 的口令）
+$KsPass = $env:AICHAT_KS_PASS
+if (-not $KsPass) { throw '缺少签名口令：请先设置环境变量 AICHAT_KS_PASS' }
 
 if ($Clean) {
     if (Test-Path $Build) { Remove-Item $Build -Recurse -Force }
 }
-New-Item -ItemType Directory -Force -Path $Build, $Gen, $Classes, $DexDir, (Join-Path $Root 'keystore') | Out-Null
+New-Item -ItemType Directory -Force -Path $Build, $Tmp, $Gen, $Classes, $DexDir, (Join-Path $Root 'keystore') | Out-Null
 
 $Aapt2 = Join-Path $BuildTools 'aapt2.exe'
 $D8 = Join-Path $BuildTools 'd8.bat'
@@ -162,6 +166,10 @@ Write-Host ("SHA256: " + $hash)
 Write-Host ("JDK   : " + $JavaHome)
 Write-Host ("SDK   : " + $Sdk)
 Write-Host '=========================================' -ForegroundColor Green
+
+
+
+
 
 
 

@@ -6,26 +6,147 @@
 
 | 文件 | 说明 |
 | --- | --- |
-| `ai-chat-app/build/AI-Chat-1.3.0.apk` | 签名后的安装包（可直接安装） |
-| `ai-chat-app/keystore/aichat-release.jks` | 签名密钥库（alias `aichat`，口令 `aichat2026`） |
+| `ai-chat-app/build/AI-Chat-1.4.3.apk` | 签名后的安装包（可直接安装） |
+| `ai-chat-app/keystore/aichat-release.jks` | 签名密钥库（alias `aichat`；口令不随仓库提交，构建前通过环境变量 `AICHAT_KS_PASS` 提供） |
 | `ai-chat-app/scripts/build.ps1` | 一键构建脚本（aapt2 → javac → d8 → zipalign → apksigner） |
 | `ai-chat-app/android/` | 原生壳源码 + 前端资源（`assets/www`） |
 | `ai-chat-app/scripts/*.js` | 无头 Chrome 冒烟 / E2E 与设备端 E2E 脚本（开发期工具，不进入 APK） |
 | `ai-chat-app/docs/CONTRACT.md` | 前端模块契约 |
 | `ai-chat-app/docs/DELIVERY.md` | 本文件 |
+| `ai-chat-app/docs/FEATURES-名单.md` | **功能名单**：需求文档 P0/P1 与历次追加需求逐条对照（我要求的 / 已实现 / 部分 / 未实现），以及疑似 bug 清单（带 `文件:行号`） |
+| `ai-chat-app/docs/audit/*.md` | 4 份只读静态审计报告（引导、角色、聊天与数据、追加需求），本名单的证据来源 |
 
 **APK 指纹（最终正式构建）**
 
-- 大小：310,565 bytes（0.30 MB）
-- SHA-256：`367F070A550B9FE64B386379A642A6C824BF086273EB629F75DB89D88B733151`
-- 包名：`com.aichat.client`；版本：`1.3.0`（versionCode 7）
+- 大小：418,344 bytes（0.39 MB）
+- SHA-256：`00BA86418E130B52F06093F6389EC93619CEA93C32B9F1236B8161A8E1118932`（同一份源码重建后因 zip 内文件时间戳不同，SHA-256 会变化；字节数与证书不变。上一版 1.3.5 构建为 `1A0FBFD5…2F4109`）
+- 包名：`com.aichat.client`；版本：`1.4.3（versionCode 16）`
 - minSdk 26（Android 8.0）/ targetSdk 34 / compileSdk 34
 - 签名：APK Signature Scheme v2 + v3（minSdk 26 下 v1/JAR 签名非必需），`zipalign` 4 字节对齐校验通过
 - 证书：`CN=AI Chat, OU=Mobile, O=AiChat, L=Shenzhen, ST=Guangdong, C=CN`
 - 证书 SHA-256：`F4AAA0A8AC71DCA67AD95F290F106A44C12D694F8477305FB213828AB92D2590`
 - 发布版未开启 `android:debuggable`，WebView 调试端口只在调试构建中打开
 
-> 本版（1.3.0）继续使用同一签名密钥库（证书 SHA-256 不变），versionCode 升到 7；如果手机上装过旧版本，可直接覆盖升级（无需卸载）。v1.3.0 新增：自定义聊天外观（微信 / iMessage / QQ 三种气泡样式、聊天背景图、我的头像）、角色性别、每个角色单独开关上帝模式、角色图片库独立入口（可从角色列表打开）、聊天存档 / 读档 / 以存档开新对话；并修复世界观选择页滚动与点击卡顿、图片库「添加图片」按钮被 toast 遮挡点不动、弹窗/操作菜单不可见、连续操作时 toast 叠成一列等问题。
+> 本版（1.4.3）继续使用同一签名密钥库（证书 SHA-256 不变），versionCode 升到 16；如果手机上装过旧版本，可直接覆盖升级（无需卸载）。v1.3.0 新增：自定义聊天外观（微信 / iMessage / QQ 三种气泡样式、聊天背景图、我的头像）、角色性别、每个角色单独开关上帝模式、角色图片库独立入口（可从角色列表打开）、聊天存档 / 读档 / 以存档开新对话；并修复世界观选择页滚动与点击卡顿、图片库「添加图片」按钮被 toast 遮挡点不动、弹窗/操作菜单不可见、连续操作时 toast 叠成一列等问题。
+
+### 1.16 本版更新（v1.4.3 · 老内核 WebView 气泡重叠 / 整页错位修复）
+
+**现场**：用户真机（OPPO PCHM10，Android 9）的「设置 → 诊断 → 界面自检」显示 UA 为
+`Chrome/70.0.3538.110`（App 内 WebView，2018 年内核），并附截图：AI 的长气泡文字压在相邻消息上、
+右侧「我」的气泡被别的气泡文字盖住、内容还画到了顶栏和输入栏上。
+
+**根因**：Chrome 70 在「高度受限的 flex 列 + `overflow:auto`」里会让子项参与 flex 收缩，且自动最小尺寸
+（`min-height:auto`）失效——每条消息被压到比内容还矮，内容溢出到相邻消息上，看起来就是「气泡互相重叠」；
+页面级滚动容器 `.page` 同样是 flex 列，所以列表页也会显得「整页错位」。另外该内核**不支持 flex 的 `gap`**
+（`CSS.supports('gap','1px')` 因 grid 支持而误报 true），消息之间连间距都没有；v1.4.1 起改用
+`position:fixed` 的外壳在老内核里还可能导致滚动内容的 overflow 裁剪失效。
+
+**修复**：
+1. `.page` / `.msg-list` / `.ck-picker-list` / `.char-picker-list` / `.chat-drawer-body` / `.help-msg-list`
+   的直接子项统一 `flex-shrink: 0`，行高只由内容决定；
+2. `css/base.css` 的 `.shell` 从 `position:fixed` 改回「`position:relative` + `height:100%` /
+   `calc(100% - var(--kb-inset,0px))`」，不再依赖 fixed 层裁剪；
+3. `.chat-topbar` / `.chat-scene-bar` 显式 `position:relative` + `z-index`，滚动内容压不到它们；
+4. `js/main.js` 新增 `probeFlexGap()`：两个 1px 子元素实测 flex 间距，不支持时给 `<html>` 加
+   `.no-flex-gap`，`css/base.css` 用外边距兜底消息间距（12px）与气泡内行距（4px）；
+5. 「设置 → 诊断 → 界面自检」新增 `flex 间距实测` 与 `消息区`（行高数组、相邻相交数、被压扁数、
+   flexShrink、noFlexGap），下次现场问题可直接回传定位。
+
+**验证**：`node --check` 全部 JS 通过；`scripts/probe-overlap.js` 新增「模拟老内核压缩」等 4 个场景：
+强制 `flex:1 1 auto + min-height:0`（等价老内核行为）时行高由 67/207/192/215 被压成 19/60/55/62，
+截图与用户真机截图一致；恢复 App 的 `flex-shrink:0` 后仅让最小尺寸失效，行高仍为 67/207/192/215；
+`no-flex-gap` 兜底实测相邻消息间距 12px；`scripts/probe-layout.js` 15 个页面 `visiblePages=1`、
+无重叠/横向溢出/JS 异常（仅引导球「内容超出但可滚」为设计如此）。
+
+**仍未做**：本机模拟器（AEHD 可用但 qemu 被 launcher 挂起）无法启动，改动由无头 Chrome 156 +
+老内核行为模拟验证，最终以真机反馈为准；如仍异常，请用「设置 → 诊断 → 界面自检 → 复制」回传。
+### 1.15 本版更新（v1.4.2 · 头像/背景可改 · 气泡重叠排查 · 键盘自适应）
+
+用户反馈「聊天框有时候会重叠」，另要求把「换头像 + 聊天背景」加进聊天页。
+
+**新增（聊天页内自定义外观）**
+1. 聊天页任意头像可点：点「我」的头像 → 换我的头像（相册选择 / 恢复默认）；点角色或群成员头像 → 换该角色头像（写库并即时重绘）。
+2. 会话菜单（右上「…」）新增「换我的头像」「聊天背景」，可从相册设置或恢复默认；背景沿用 `App.Style` 的 `chat_bg`，深色/AMOLED 自动加蒙层。
+3. 角色信息抽屉头部新增「换头像」按钮。
+
+**重叠排查与修复**
+4. 空白气泡：请求失败、正文为空时不再渲染一个空白白气泡，只保留错误条与「重试」。（`buildBubble` 加 `is-empty`，`css/pages-chat.css` 隐藏）
+5. 贴底跟随：图片异步解码、字体替换、视口/键盘变化后重新贴底（`ResizeObserver` + list 捕获 `load` + `visualViewport.resize` + 两次 rAF），避免「最后一条被挤出可视区 / 被输入框压住」。
+6. 键盘只盖不 resize 的 WebView：`main.js` 用 `visualViewport` 算出键盘高度写入 `--kb-inset`，`.shell` 的 `bottom` 随之收缩，输入框始终浮在键盘之上，不再与消息叠在一起。
+7. 顺带修正文本模式样式选择器（`.msg.ai .bubble.text-mode` → `.msg.ai .msg-bubble.text-mode`，此前样式没命中）。
+
+**验证**：`node --check` 改动 JS 全通过；无头 Chrome 390×844 重新跑 `scripts/probe-overlap.js`（12 条单聊消息含长文本/多行/斜体/列表/代码/图片/长图/文件/失败空正文/流式中 + 10 条群聊）与 `scripts/probe-resize.js`（视口 844→500→360→844、输入框多行增高、异步大图、流式追加 40 帧）：相邻消息相交 **0**、气泡文字溢出 **0**、被输入栏压住 **0**，`atBottom` 全部为 true（修复前首屏为 false）；`--kb-inset: 260px` 时 `.shell` 高度 844→584、输入框底部 584 跟随上移。APK 内 `assets/www` 53 个文件与源码逐一 SHA-256 一致；`aapt dump badging` = versionCode 16 / 1.4.3；`zipalign -c 4` 通过；`apksigner` v2+v3，证书 SHA-256 仍 `f4aaa0a8…d2590`（可直接覆盖升级）。
+
+**仍需说明**：Chromium 下没能复现「气泡互相重叠」，本机模拟器依旧无法启动（qemu 被挂起，见 §1.14）。本轮针对最可能的几类成因（空气泡、异步图片高度、键盘只盖不 resize、文本模式样式未命中）做了加固；若仍出现，请用「设置 → 诊断 → 界面自检 → 复制」把现场数据发来（含 UA/内核版本、`.shell` 与 `.page-body` 尺寸、滚动容器清单）。
+
+### 1.14 本版修复（v1.4.1 · 页面错位 / 不能滑动 · 界面自检）
+
+用户反馈「还是不能滑动」「页面全部错位」。本机 Android 模拟器无法运行（见下方说明），无法在设备上复现，因此改为「加固 + 取证」两条线：
+
+1. **骨架布局不再依赖视口单位**：`.shell` 从 `height:100%/100dvh` 改为 `position:fixed` + 四边 `0`，直接钉在视口四角。这样即使某个 WebView 上 `100dvh` 失效、或键盘弹起后高度算错，导航栏/内容区/Tab 栏也不会错位。
+2. **去掉 `inset` 简写**：全仓 13 处 `inset: 0` 改写为 `top/right/bottom/left: 0`。`inset` 需要 Chrome 87+，老 WebView（Android 8~10 未更新内核）会整条声明失效，导致 `.page`、弹窗遮罩、启动页、引导遮罩全部失去定位 —— 这类失效的典型表现就是「整页错位」。
+3. **滚动容器统一声明手势**：`.page-body`、`.page`、`.page-scroll` 加 `touch-action: pan-y`、`overscroll-behavior: contain`、`overflow-x: hidden`，避免横向误判吞掉纵向滑动、以及内容滚到底后把滚动传给外层。
+4. **新增「设置 → 诊断 → 界面自检」**：一键采集 UA/WebView 内核版本、屏幕与窗口尺寸、视觉视口、`dvh`/`inset`/`flex gap`/`:has` 支持情况、`.shell`/`.page-body`/`.page` 的尺寸与 scrollHeight、当前页可滚动容器清单、最近 800 字日志，可一键复制。页面异常时把它发给开发者即可定位，不再靠猜。
+
+**验证**：`node --check` 全部 JS 通过；`node scripts/probe-layout.js`（无头 Chrome 390×844，26 角色/26 会话/12 消息每会话/12 世界书条目/1 群聊种子数据）15 个页面复跑：每页 `visiblePages=1`、无重叠、无横向溢出、无 JS 异常，聊天列表 `sh=2014/ch=685 can=true`、角色列表 `sh=1860/ch=740`、设置 `sh=2178/ch=740`、单聊 `sh=1549/ch=660`、世界书 `sh=1583/ch=733` 均可滚动；APK 内 `assets/www` 53 个文件与源码逐一 SHA-256 一致；`aapt dump badging` = versionCode 16 / 1.4.3；`zipalign -c 4` 通过；`apksigner` v2+v3，证书 SHA-256 不变。
+
+**关于「自己开模拟器试试」**：本轮确实装了 `emulator` + `system-images;android-33;google_apis;x86_64`（约 8.4 GB）并建了 AVD `probe33`，但模拟器在本机起不来——`emulator.exe` 与 `netsimd` 都能启动、`adb` 也正常，可 `qemu-system-x86_64-headless` 的 52 个线程里 **50 个停在 Suspended**、CPU 冻结在 0.27s，guest 内核完全没跑。试过 `-gpu off`/`swiftshader_indirect`/窗口模式/`-accel off`(TCG)/`NtResumeProcess` 强制恢复/用计划任务脱离父进程启动（排除 job 对象挂起），现象一致；`emulator -accel-check` 报 `AEHD (version 2.2) is installed and usable`、服务 `aehd` 也是 Running，属「驱动可用但 qemu 被挂起」的本机环境问题，与 APK 无关。因此本版的设备侧结论仍缺失，请用上面第 4 条自检把现场数据发回来。
+
+### 1.13 本版新增（v1.4.0 · 世界书 / 群聊 / 角色卡 V2 / 多身份 / 消息分支 / 预设文本模式）
+
+按用户指令补齐功能名单里剩下的 6 项（第 5 项「FAQ 可编辑 + 换个说法再问」未在本次范围）：
+
+1. **世界书 Lorebook**：DB 升到 v4，新增 `lorebooks` / `loreEntries` / `groups` 三表与索引；`js/lorebook.js` 提供触发词匹配（keys/secondaryKeys/alwaysOn/caseSensitive/priority）与 token 预算注入 `buildInjection`，以及按角色卡/世界观 AI 生成条目 `generateEntries`。页面：`lorebook`（列表）、`lorebookEdit`（条目编辑）、`lorebookGen`（生成预览）。入口：角色编辑页「世界书」、世界观详情「生成世界书条目」、聊天页会话菜单「世界书」。
+2. **群聊**：`js/group.js`（2~8 人，`create`/`addMembers`/`removeMember`/`rename`/`dissolve`、`decideSpeaker` 由 API 决定下一位发言人、`parseSpeakerReply` 解析首行 `【角色名】`）；页面 `groupCreate` / `groupManage`；`sessions.kind='group'` + `characterIds`/`groupId`，`messages` 增加 `characterId`/`speakerName` 渲染每句发言人头像与名字。
+3. **角色卡导入导出（TavernAI / SillyTavern V2）**：`js/tavern.js` `parseV2`/`toV2`/`importCard`/`exportCard`（v1/v3 给兼容警告）；入口：角色列表「⋯」与新建角色第 1 步。
+4. **多身份 Persona**：`js/persona.js` + 设置 →「我的身份」管理页（`personas` / `personaEdit`）；聊天页会话菜单「我的身份」按会话切换，支持「不设定身份」。
+5. **从消息分支对话**：消息菜单新增「从这里分支对话」，`branchFrom()` 复制该消息及之前历史到新会话（标题加「（分支）」），沿用角色/身份/预设/API/模型/场景/群成员/世界书。
+6. **预设文本模式生效**：预设 `mode='text'` 时聊天页按纯文本补全渲染（`textContent`、保留换行、不解析 Markdown/斜体/图片标记），并在 system 追加纯文本约束（`chat.js` `textMode`/`decorateContext`、`css/pages-chat.css` `.text-mode`）；`preset-edit.js` 说明同步。
+
+修复/接线：`index.html` 新增 4 个 JS 与 4 个 CSS（www 共 53 个文件）；`AndroidManifest.xml` 升至 versionCode 13 / 1.4.0（aapt2 的 `--version-code` 不会覆盖 Manifest 里已声明的值，必须以 Manifest 为准）。
+
+**验证**：`node --check` 21 个改动 JS 全过；新增 `scripts/e2e-v140.js` 纯静态接线冒烟 **98/98**（文件存在、模块 API、页面注册、DB 表与 index.html 接线、chat.js 钩子），**本轮未启动无头浏览器/模拟器**（按用户要求控制机器负载），因此真实交互路径未经浏览器 E2E 复跑；`aapt dump badging` 显示 versionCode 13 / 1.4.0、minSdk 26 / targetSdk 34；`zipalign -c 4` 通过；`apksigner` v2+v3，证书 SHA-256 与历史一致（可覆盖升级）。
+
+### 1.12 本版更新（v1.3.5 · 按钮自适应 / 长图显示 / 长文字生成人格）
+
+- **按钮自适应**：统一 .btn 的最小高度、内边距与换行策略；底部操作栏（创建向导、角色编辑、弹窗、引导页）的全部按钮改为等宽 flex:1 1 0 + min-width:0，窄屏（≤360px）自动收窄内边距与字号；实测 320px 宽度下创建页、角色编辑页三按钮等宽，页面无横向溢出。
+- **长截图显示适配**：聊天里收到的长截图不再被裁成普通方形缩略图：高宽比 ≥2 的图片显示为固定高度的「长图卡片」（顶部对齐、带「长图 · 点击查看」角标）；点击后打开可纵向滚动的预览（Media.preview 使用 .media-preview-scroll 容器，长图全宽显示、上下滚动查看），不再是缩到看不清的一条细线。
+- **滚动修复**：为 .ck-wizard-body、.sheet-list 补 min-height:0，修复内容较长时向导/列表无法滚动的问题；弹窗内长图预览会自动放宽高度上限。
+- **粘贴长文字生成人格**：新建角色第 1 步新增「粘贴长文字，自动生成人格」入口——粘贴一段长设定/旧聊天记录，AI 整理为角色卡并进入预览（≥20 字校验、失败降级为可编辑草稿、不会自动保存）。
+- **验证**：新增 e2e-layout 14 项（320/390 两档按钮等宽、页面不溢出、设置页/向导可滚动、长图卡片与滚动预览）；e2e-import 扩到 28 项；全量 15 套 E2E 全部通过。
+
+### 1.11 本版新增功能（v1.3.4 · 长截图识别 + 运行日志）
+
+- **长截图也能识别人格**：以前长截图会被整体压缩到最长边 1600px，宽度只剩两百多像素、文字糊成一片。现在按「宽度保持清晰、纵向切段」处理：原生用 `BitmapRegionDecoder` 把长图切成若干条带（每段高度约为宽度的 2 倍、6% 重叠、最多 8 段），每段分别按目标宽度缩放并编码；前端 `App.Import.sliceImage()` 在浏览器/原生未切片时用 canvas 兜底；多段图片作为同一条 user 消息按顺序发给视觉模型，并在每段前标注「第 i/N 段」。
+- **运行日志**：设置页新增「诊断 → 运行日志」，记录最近 300 条运行与错误日志（本地持久化最近 150 条，重启后可查）。自动捕获 `console.warn/error`、未捕获异常与 unhandledrejection，也可由模块主动写入；日志只存本机，不含 API Key 或聊天正文，支持一键复制、清空，方便反馈问题时附带现场信息。
+- **验证**：新增 `e2e-log` 10 项；`e2e-import` 扩充到 **28 项**（长截图切段、多段图片提示、清晰度与 slice 参数），全量 14 套 E2E 全部通过。
+
+### 1.10 本版修复（v1.3.3 · 图片识别反馈与清晰度）
+
+修复用户反馈「图片识别反馈没有输出」：
+
+- **根因 1：截图被压到 320px**。此前所有选图都走同一套头像压缩（最长边 320px JPEG 82），聊天截图里的文字几乎不可读，视觉模型自然「读不到内容」。现在按用途区分清晰度：截图识别人格最长边 **1600px / 质量 92**；聊天里发送图片 **1280px / 88**；角色图片库 **1024px / 88**；聊天背景 **1600px / 90**；头像 **512px / 90**。原生侧先解码到不小于目标尺寸再等比缩小，并保留 800 万像素内存上限。
+- **根因 2：识别过程与失败没有可见反馈**。现在选完截图立刻显示「正在识别截图…（已用 N 秒）」计时状态；识别失败或模型返回空人格时，在导入卡片下方显示红色错误卡片「没有识别出结果 + 具体原因 + 建议（换清晰原图 / 换支持图片输入的模型）」，并停留在导入步骤可重试，不再静默或直接进入预览。
+- **回归**：e2e-import 扩充到 **18 项**（新增「截图识别使用高清晰度 maxSide≥1200」「识别不出结果时显示错误卡片」「错误卡片说明原因」「失败后停留在导入步骤」），媒体/聊天/角色/v1.3.0/引导等套件全部通过。
+
+### 1.9 本版新增功能（v1.3.2 · 角色场景：多条保存 / 可为空 / 会话选场景）
+
+- **多条场景**：角色可保存 0~6 条的场景描述（如「雨夜的书店，只开了柜台一盏灯」），创建向导第 3 步可增删，角色编辑页「场景（可多条）」可随时编辑；每条 ≤200 字。
+- **可为空、由上下文判断**：场景可以完全留空；此时聊天提示词不限定场景，只提示角色「结合上下文与最近对话自然判断此刻的场景」。
+- **新建会话时选场景**：有场景的角色，新建会话会先弹出「这次在哪里开始？」，可选某个场景或「由上下文自由判断」；无场景的角色直接开始，不打扰。
+- **聊天中随时切换场景**：聊天页顶部新增场景条（显示当前场景/自动），点一下即可切换；会话菜单也有「切换场景」。
+- **提示词注入**：选定场景时注入「【当前场景】…」并要求自然带入环境、光线、声音与动作细节；自动模式注入「【可选场景】…」并要求按上下文判断，不硬复述。
+- **数据**：characters.scenarios（string[]）、sessions.scene（空串 = 自动）；老字段 characters.scenario 继续保留为首场景兼容。
+- **验证**：新增 scripts/e2e-scenes.js（14 项：场景面板、会话写入、当前场景/可选场景提示词、切换自动、无场景不弹窗、编辑页增删落库）全部通过；全量 13 套 E2E 串行回归通过（含 audit、onboarding、character、chat、greetings、media、saves、proactive、guide、acceptance、import、v130、scenes）。
+
+### 1.8 本版新增功能（v1.3.1 · 人格导入：设定文件 / DS 聊天记录 / 聊天截图）
+
+- **从文件导入人格**：新建角色 → 第 1 步底部「导入设定文件 / 聊天记录」，支持 `.md` / `.prompt` / `.txt` / `.json` / `.jsonl`；读取后调用你配置的补全 API 整理成角色卡，直接进入第 5 步预览（可「让 AI 改」或手动修改后再保存）。
+- **导入 DeepSeek 聊天记录**：支持 DS 导出的 JSON（`messages` / `chat_messages` / `conversations[].messages` 等常见结构）与「我：/TA：」纯文本记录；自动识别聊天双方，从「对方」的消息里提炼名字、性格、说话方式与开场白。
+- **上传聊天截图识别人格**：第 1 步「上传聊天截图，AI 识别人格」→ 选图后用支持图片输入的模型识别人格（需模型支持多模态；不支持时给出明确提示）。
+- **兜底不丢内容**：AI 整理失败时，自动生成一张可编辑草稿（把原文/角色发言放进背景）并提示手动完善；预览阶段**不会自动保存**，确认后点「保存」才落库。
+- **数据与提示词**：新增 `js/import.js`（App.Import：聊天记录解析 / transcript / 本地兜底角色卡）与 `App.Prompts.importPersona`、`importPersonaFromImage`；解析失败自动重试 1 次同现有补全逻辑。
+- **验证**：`scripts/e2e-import.js` 覆盖 .md、DS JSON 聊天记录、截图识别三条路径与「预览不自动保存」，14 项全部通过；全量 12 套 E2E 串行回归通过。
 
 ### 1.7 本版新增功能（v1.3.0 · 聊天外观 / 性别 / 角色级上帝模式 / 独立图片库 / 存档）
 
@@ -101,7 +222,7 @@
 
 ```powershell
 # USB 调试已开启时
-adb install -r ai-chat-app\build\AI-Chat-1.3.0.apk
+adb install -r ai-chat-app\build\AI-Chat-1.4.3.apk
 
 # 或把 APK 传到手机，在文件管理器里点击安装（允许「安装未知来源应用」）
 ```
@@ -159,14 +280,23 @@ adb install -r ai-chat-app\build\AI-Chat-1.3.0.apk
 | `scripts/e2e-onboarding.js` | 6 步引导全流程 + 错误 Key + 不写库 + 重启免引导 | 26/26 |
 | `scripts/e2e-character.js` | 5 步创建向导 + 校验拦截 + 生成中实时输出/停止/继续 + 失败兜底 + 保存落库 + 自动开聊 | 28/28 |
 | `scripts/e2e-chat.js` | 历史渲染、流式、停止、落库、重新生成多版本 | 16/16 |
-| `scripts/e2e-guide.js` | 气泡上下文、扇形菜单、怎么走步骤、focus/navigate、纯文本兜底 | 14/14 |
+| `scripts/e2e-guide.js` | 气泡上下文、扇形菜单、怎么走步骤、focus/navigate、光标高亮、纯文本兜底 | 18/18 |
+| `scripts/e2e-greetings.js` | 问候语首选/备选/空对话、换开场白、新会话默认 | 26/26 |
+| `scripts/e2e-saves.js` | 存档/读档/以存档开新对话/重命名 | 7/7 |
+| `scripts/e2e-import.js` | .md/DS 聊天记录/聊天截图人格导入、清晰度、长截图切段、失败反馈 | 28/28 |
+| `scripts/e2e-log.js` | 运行日志记录/捕获/持久化/查看/清空 | 10/10 |
+| `scripts/e2e-scenes.js` | 场景多条/可为空/会话选场景/切场景/提示词注入 | 14/14 |
+| `scripts/e2e-v130.js` | 聊天样式/背景/头像、角色性别、角色级上帝模式、独立图片库 | 16/16 |
 | `scripts/e2e-acceptance.js` | AI 补全成功路径、草稿恢复、改稿回滚、助手 prompt、1000 条性能、断网、错误帮助、引导会话隔离 | 32/32 |
+| `scripts/e2e-layout.js` | 按钮自适应（320/390 等宽、无溢出）、设置页与创建向导可滚动、长图卡片与滚动预览 | 14/14 |
 | `scripts/e2e-media.js`（v1.1.0 新增） | 角色图片库增删/预览/菜单、聊天发图片与文件附件并落库、assistant 发图 `[[img:ID]]`、动作斜体 `*…*`、上帝模式开关与 system prompt、帮助抽屉发图→加入图片库 | 46/46 |
 
 截图位于 `ai-chat-app/build/shots/`（浅色/暗色/AMOLED、聊天/角色/引导气泡/错误帮助等）。
 
 ### 5.1 Android 设备端验证（API 33 / Android 13 模拟器）
 
+> **v1.3.3 验证说明**：本版改前端图片选择参数与导入反馈，并给原生 pickImage 增加 maxSide/quality 参数、调整截图解码采样；已通过浏览器全量 E2E 与 e2e-import 18 项。按用户要求避免再次占用大量内存启动模拟器，未重复设备端自动化验证；若真机识图仍失败，请先确认补全模型支持图片输入（如 gpt-4o、qwen-vl 等），并尽量选择清晰原图。
+>
 > **v1.2.2 验证说明**：v1.2.2 仅改动前端（随机间隔上下限、到点决策、引导光标）与引导样式，已通过浏览器 E2E（`e2e-proactive` 43 项、`e2e-guide` 18 项）与全量回归验证，未再启动模拟器。
 >
 > **v1.2.0 设备端验证说明**：本版新增的原生通知代码（POST_NOTIFICATIONS、`ProactiveReceiver`、AlarmManager 排期）已随构建产物做静态校验（`aapt2 dump badging` 含权限、`aapt2 dump xmltree` 含 receiver、`zipalign`/`apksigner` 通过），主动消息的业务逻辑由浏览器 E2E（`e2e-proactive` 18 项、`e2e-greetings` 20 项）覆盖。按用户要求避免再次占用大量内存启动模拟器，本版未重复设备端自动化验证；建议真机首次开启「角色主动消息」时确认系统通知权限弹窗，若通知未出现请在系统设置中允许通知。
@@ -221,13 +351,14 @@ pwsh -NoProfile -ExecutionPolicy Bypass -File scripts\build.ps1 -Clean
 
 ```powershell
 pwsh -NoProfile -ExecutionPolicy Bypass -File scripts\build.ps1 -DebugMode
-# 输出 build/AI-Chat-1.3.0-debug.apk
-adb install -r build\AI-Chat-1.3.0-debug.apk
+# 输出 build/AI-Chat-1.4.3-debug.apk
+adb install -r build\AI-Chat-1.4.0-debug.apk
 adb forward tcp:9333 localabstract:webview_devtools_remote_<app pid>
 node scripts\device-e2e.js 9333
 ```
 
 设备端返回键验证：`node scripts\device-back-test.js 9333 push` → `adb shell input keyevent 4` → `node scripts\device-back-test.js 9333 check`。
+
 
 
 

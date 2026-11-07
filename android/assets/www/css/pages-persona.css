@@ -1,0 +1,157 @@
+/* pages-persona.css —— 「我的身份」列表页 / 编辑页
+ * 约定：本文件只写 .persona-* 前缀的类，通用样式复用 base.css（.list/.cell/.form/.field/.btn 等）
+ */
+
+/* ---------- 列表页 ---------- */
+
+.persona-page {
+  background: var(--bg);
+}
+
+.persona-scroll {
+  padding-bottom: 16px;
+}
+
+.persona-tip {
+  padding: 14px 16px 4px;
+  font-size: 12.5px;
+  line-height: 1.6;
+  color: var(--text-3);
+}
+
+.persona-status {
+  min-height: 0;
+}
+
+.persona-list {
+  margin: 8px 12px 0;
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.persona-row {
+  min-height: 64px;
+  align-items: center;
+}
+
+.persona-title-row {
+  gap: 8px;
+  min-width: 0;
+}
+
+.persona-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.persona-badge {
+  flex: 0 0 auto;
+}
+
+.persona-sub {
+  min-height: 18px;
+}
+
+.persona-side {
+  padding-left: 4px;
+}
+
+.persona-more {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  border: none;
+  background: transparent;
+  color: var(--text-3);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+}
+
+.persona-more:active {
+  background: var(--card-2);
+}
+
+.persona-more svg {
+  width: 19px;
+  height: 19px;
+}
+
+.persona-actions {
+  gap: 10px;
+}
+
+.persona-add-btn {
+  flex: 1;
+}
+
+/* ---------- 编辑页 ---------- */
+
+.persona-edit-page {
+  background: var(--bg);
+}
+
+.persona-avatar-card {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin: 12px 12px 0;
+  padding: 16px;
+  background: var(--card);
+  border-radius: 12px;
+}
+
+.persona-avatar-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.persona-avatar-title {
+  font-size: 16px;
+  font-weight: 500;
+  color: var(--text);
+}
+
+.persona-avatar-hint {
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--text-3);
+}
+
+.persona-avatar-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 6px;
+}
+
+.persona-avatar-pick,
+.persona-avatar-clear {
+  flex: 0 0 auto;
+}
+
+.persona-form {
+  margin: 12px 12px 0;
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.persona-field-name,
+.persona-field-desc {
+  padding-top: 14px;
+  padding-bottom: 14px;
+}
+
+.persona-actions .persona-save-btn {
+  flex: 1;
+}
+
+.persona-actions .persona-delete-btn {
+  flex: 0 0 88px;
+}

@@ -12,7 +12,10 @@
    ========================================================================= */
 #overlay-root > .bubble-root {
   position: fixed;
-  inset: 0;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
   pointer-events: none;
   /* 不建立新的层叠上下文，子元素各自按 z-index 参与 #overlay-root 内的排序 */
 }
@@ -87,7 +90,10 @@
 .bubble-ball::before {
   content: '';
   position: absolute;
-  inset: 0;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
   border-radius: 50%;
   background: color-mix(in srgb, var(--brand) 45%, transparent);
   opacity: 0;
@@ -116,7 +122,10 @@ body.chat-input-focus .bubble-hint {
 /* ---- 20% 黑色遮罩 ---- */
 .bubble-mask {
   position: fixed;
-  inset: 0;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
   z-index: 900;
   background: rgba(0, 0, 0, 0.2);
   opacity: 0;
@@ -129,7 +138,10 @@ body.chat-input-focus .bubble-hint {
 /* ---- 扇形快捷项 ---- */
 .bubble-fan {
   position: fixed;
-  inset: 0;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
   z-index: 901;
   pointer-events: none;
 }
@@ -255,7 +267,10 @@ body.chat-input-focus .bubble-hint {
 /* ---- 结果面板（怎么走 / 兜底 / 配置引导） ---- */
 .bubble-panel-mask {
   position: fixed;
-  inset: 0;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
   z-index: 902;
   background: rgba(0, 0, 0, 0.18);
   opacity: 0;
@@ -545,7 +560,10 @@ body.chat-input-focus .bubble-hint {
    ========================================================================= */
 .help-drawer-wrap {
   position: fixed;
-  inset: 0;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
   z-index: 950;
   display: flex;
   flex-direction: column;
@@ -556,7 +574,10 @@ body.chat-input-focus .bubble-hint {
 
 .help-drawer-wrap .help-mask {
   position: absolute;
-  inset: 0;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
   opacity: 0;
   background: var(--mask);
   transition: opacity 0.24s ease;

@@ -226,7 +226,7 @@
         };
         if (st.readonly) modeSeg.classList.add('readonly');
         f.mode = modeSeg;
-        addField('模式', modeSeg, '聊天：用于对话；文本：用于单次文本生成。');
+        addField('模式', modeSeg, '聊天：回复按对话渲染（支持 Markdown 和 *动作* 斜体）；文本：按纯文本补全渲染（保留换行，不解析 Markdown），适合续写/正文生成类预设。');
 
         var appliesSeg = makeSeg([
           { value: 'companion', label: '陪聊角色' },

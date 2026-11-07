@@ -510,7 +510,7 @@
     var m = mediaApi();
     if (!m) { UI().toast('图片功能还没加载好，请稍后再试', 'error'); return Promise.resolve(null); }
     state.picking = true;
-    return m.pickImage().then(function (att) {
+    return m.pickImage({ maxSide: 1280, quality: 88 }).then(function (att) {
       if (!att || !att.dataUri || state.closed) return null;
       state.attachment = att;
       renderAttachBar(state);

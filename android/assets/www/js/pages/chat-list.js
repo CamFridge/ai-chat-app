@@ -364,6 +364,13 @@
       if (imgBlock) parts.push(imgBlock);
     }
     if (opts && opts.godMode === true) parts.push(K.GOD_MODE_PROMPT);
+    var scene = opts && String(opts.scene || '').trim();
+    var scenes = (opts && Array.isArray(opts.scenarios)) ? opts.scenarios.filter(Boolean) : [];
+    if (scene) {
+      parts.push('【当前场景】' + scene + '\n对话发生在上述场景里：自然带入环境、光线、声音与动作细节，不要生硬复述场景名。');
+    } else if (scenes.length) {
+      parts.push('【可选场景】' + scenes.join(' / ') + '\n本次对话不限定固定场景：请结合上下文与最近对话自然判断此刻的场景，不要生硬说明。');
+    }
     return parts.join('\n\n');
   };
 
@@ -387,7 +394,9 @@
     var sys = K.buildSystemPrompt(opts.character, opts.persona, opts.preset, {
       expressionFormat: opts.expressionFormat,
       images: opts.images,
-      godMode: opts.godMode
+      godMode: opts.godMode,
+      scene: opts.scene,
+      scenarios: opts.scenarios
     });
     var list = (opts.messages || []).filter(function (m) {
       if (!m) return false;
@@ -547,24 +556,57 @@
         return null;
       }
 
+      function groupMembersOfRow(session) {
+        var ids = Array.isArray(session && session.characterIds) ? session.characterIds : [];
+        var list = [];
+        ids.forEach(function (id) {
+          var c = state.chars[id];
+          if (c) list.push(c);
+        });
+        return list;
+      }
+
+      // 群聊头像：成员头像叠放（最多 4 个）；成员都被删除时用 👥 兜底
+      function groupAvatarEl(session) {
+        var members = groupMembersOfRow(session);
+        if (!members.length) {
+          return App.UI.el('div', {
+            class: 'avatar group md group-avatar',
+            text: '👥',
+            attrs: { 'aria-hidden': 'true' }
+          });
+        }
+        var wrap = App.UI.el('div', {
+          class: 'avatar group-avatar n' + Math.min(members.length, 4),
+          attrs: { 'aria-hidden': 'true' }
+        });
+        members.slice(0, 4).forEach(function (c) {
+          wrap.appendChild(App.UI.avatar(c.name || '角色', c.avatar, 'sm'));
+        });
+        return wrap;
+      }
+
       function buildRow(session) {
-        var card = state.chars[session.characterId] || { name: session.title || '未知角色', type: 'companion' };
+        var isGroup = session.kind === 'group';
+        var card = isGroup
+          ? { name: session.title || '群聊', type: 'group' }
+          : (state.chars[session.characterId] || { name: session.title || '未知角色', type: 'companion' });
         var generating = K.isGenerating(session.id) || !!session.isGenerating;
         var pv = previewOf(session);
         var unread = Number(session.unread) || 0;
 
         var row = App.UI.el('div', {
-          class: 'cell session-cell' + (session.pinned ? ' pinned' : '') + (generating ? ' generating' : ''),
+          class: 'cell session-cell' + (session.pinned ? ' pinned' : '') + (generating ? ' generating' : '') + (isGroup ? ' session-cell-group' : ''),
           dataset: { id: session.id }
         });
-        row.appendChild(K.avatarEl(card, 'md'));
+        row.appendChild(isGroup ? groupAvatarEl(session) : K.avatarEl(card, 'md'));
 
         var main = App.UI.el('div', { class: 'main' });
         var titleRow = App.UI.el('div', { class: 'title session-title' },
           App.UI.el('span', { class: 'session-name ellipsis', text: session.title || card.name || '未命名会话' }),
           App.UI.el('span', {
-            class: 'type-tag ' + (card.type === 'assistant' ? 'assistant' : 'companion'),
-            text: K.typeLabel(card.type)
+            class: isGroup ? 'type-tag group-tag' : ('type-tag ' + (card.type === 'assistant' ? 'assistant' : 'companion')),
+            text: isGroup ? '群聊' : K.typeLabel(card.type)
           })
         );
         if (session.pinned) {
@@ -572,7 +614,16 @@
         }
         main.appendChild(titleRow);
 
-        var subText = generating ? '生成中…' : (pv && pv.text ? (pv.role === 'user' ? '我：' + pv.text : pv.text) : '还没有消息，打个招呼吧');
+        var subText;
+        if (generating) {
+          subText = '生成中…';
+        } else if (pv && pv.text) {
+          subText = pv.role === 'user' ? '我：' + pv.text : pv.text;
+        } else if (isGroup) {
+          subText = '群聊 · ' + groupMembersOfRow(session).length + ' 人，还没有消息';
+        } else {
+          subText = '还没有消息，打个招呼吧';
+        }
         main.appendChild(App.UI.el('div', { class: 'sub session-preview ellipsis' + (generating ? ' generating' : ''), text: subText }));
         row.appendChild(main);
 
@@ -616,7 +667,11 @@
           if (!q) return true;
           var card = state.chars[s.characterId] || {};
           var pv = previewOf(s);
-          var hay = ((s.title || '') + ' ' + (card.name || '') + ' ' + (pv && pv.text ? pv.text : '')).toLowerCase();
+          var memberNames = '';
+          if (s.kind === 'group') {
+            memberNames = groupMembersOfRow(s).map(function (c) { return c.name || ''; }).join(' ');
+          }
+          var hay = ((s.title || '') + ' ' + (card.name || '') + ' ' + memberNames + ' ' + (pv && pv.text ? pv.text : '')).toLowerCase();
           return hay.indexOf(q) >= 0;
         });
 
@@ -744,13 +799,14 @@
 
       /* ---------- 会话操作菜单 ---------- */
       function openSessionMenu(session) {
+        var isGroup = session.kind === 'group';
         K.sheet({
           title: session.title || '会话操作',
           items: [
-            { id: 'rename', value: 'rename', label: '重命名会话', icon: 'edit' },
+            { id: 'rename', value: 'rename', label: isGroup ? '重命名群聊' : '重命名会话', icon: 'edit' },
             { id: 'pin', value: 'pin', label: session.pinned ? '取消置顶' : '置顶会话', icon: 'pin' },
             { id: 'clear', value: 'clear', label: '清空消息', icon: 'trash' },
-            { id: 'delete', value: 'delete', label: '删除会话', icon: 'delete', danger: true }
+            { id: 'delete', value: 'delete', label: isGroup ? '删除群聊' : '删除会话', icon: 'delete', danger: true }
           ],
           cancelText: '取消'
         }).then(function (item) {
@@ -767,18 +823,31 @@
       }
 
       function doRename(session) {
+        var isGroup = session.kind === 'group';
         return K.prompt({
-          title: '重命名会话',
-          message: '给这段对话起个名字',
+          title: isGroup ? '重命名群聊' : '重命名会话',
+          message: isGroup ? '给这个群聊起个新名字' : '给这段对话起个名字',
           value: session.title || '',
-          placeholder: '会话名称',
+          placeholder: isGroup ? '群聊名称' : '会话名称',
           okText: '保存'
         }).then(function (name) {
           if (name === null) return null;
           var title = String(name).trim();
           if (!title) { K.toast('名称不能为空'); return null; }
           session.title = title;
-          return D.put('sessions', session).then(function () {
+          var syncP = null;
+          if (isGroup && session.groupId) {
+            syncP = D.get('groups', session.groupId).then(function (g) {
+              if (!g) return null;
+              g.name = title;
+              g.updatedAt = U.now();
+              return D.put('groups', g);
+            }).catch(function (err) {
+              console.error('[chatList] 同步群记录名称失败', err);
+              return null;
+            });
+          }
+          return Promise.all([D.put('sessions', session), syncP]).then(function () {
             K.toast('已重命名', 'ok');
             return refresh();
           });
@@ -829,9 +898,12 @@
       }
 
       function doDelete(session) {
+        var isGroup = session.kind === 'group';
         return K.confirm({
-          title: '删除会话',
-          message: '将删除「' + (session.title || '该会话') + '」及其全部消息，且不可恢复。',
+          title: isGroup ? '删除群聊' : '删除会话',
+          message: isGroup
+            ? '将删除群聊「' + (session.title || '该群聊') + '」及其全部消息，且不可恢复。'
+            : '将删除「' + (session.title || '该会话') + '」及其全部消息，且不可恢复。',
           okText: '删除',
           danger: true
         }).then(function (ok) {
@@ -843,7 +915,13 @@
           }).then(function () {
             return D.del('sessions', session.id);
           }).then(function () {
-            K.toast('已删除会话', 'ok');
+            if (!session.groupId) return null;
+            return D.del('groups', session.groupId).catch(function (err) {
+              console.error('[chatList] 删除群记录失败', err);
+              return null;
+            });
+          }).then(function () {
+            K.toast(isGroup ? '已删除群聊' : '已删除会话', 'ok');
             return refresh();
           });
         }).catch(function (err) {
@@ -852,8 +930,39 @@
         });
       }
 
-      /* ---------- 新建会话：角色选择器（分组 + 搜索） ---------- */
+      /* ---------- 新建：菜单（单角色会话 / 群聊） ---------- */
       function openNewSession() {
+        K.sheet({
+          title: '新建',
+          items: [
+            { id: 'single', label: '新建会话', desc: '选一个角色，开始一对一聊天', icon: 'chat' },
+            { id: 'group', label: '新建群聊', desc: '邀请 2 位以上角色一起聊', icon: 'character' }
+          ],
+          cancelText: '取消'
+        }).then(function (item) {
+          if (!item) return null;
+          if (item.id === 'group') {
+            if (!App.Group || typeof App.Group.create !== 'function') {
+              K.toast('群聊模块未加载，请重启应用', 'error');
+              return null;
+            }
+            var ret = App.Router.push('groupCreate');
+            if (ret && typeof ret.catch === 'function') {
+              ret.catch(function (err) {
+                console.error('[chatList] 打开新建群聊失败', err);
+                K.toast('无法打开新建群聊页', 'error');
+              });
+            }
+            return null;
+          }
+          return openSingleSession();
+        }).catch(function (err) {
+          console.error('[chatList] 新建菜单出错', err);
+        });
+      }
+
+      /* ---------- 新建会话：角色选择器（分组 + 搜索） ---------- */
+      function openSingleSession() {
         Promise.all([
           D.all('characters'),
           D.all('personas'),
@@ -877,9 +986,12 @@
             });
           }
           openCharacterPicker(chars, function (character) {
-            createSession(character, personas, providers, defProviderId, defPresetId).catch(function (err) {
-              console.error('[chatList] 创建会话失败', err);
-              K.toast('创建会话失败：' + ((err && err.message) || '未知错误'), 'error');
+            pickScene(character).then(function (scene) {
+              if (scene === null) return; // 用户在场景选择里点了取消
+              return createSession(character, personas, providers, defProviderId, defPresetId, scene).catch(function (err) {
+                console.error('[chatList] 创建会话失败', err);
+                K.toast('创建会话失败：' + ((err && err.message) || '未知错误'), 'error');
+              });
             });
           });
         }).catch(function (err) {
@@ -982,7 +1094,27 @@
         return { text: '', index: -1 };
       }
 
-      function createSession(character, personas, providers, defProviderId, defPresetId) {
+      function pickScene(character) {
+        var scenes = (character && Array.isArray(character.scenarios)) ? character.scenarios.filter(Boolean) : [];
+        if (!scenes.length) return Promise.resolve('');
+        var items = [{ id: '', label: '由上下文自由判断', desc: '不限定场景，让角色根据对话自然带入' }];
+        scenes.forEach(function (s, i) {
+          var text = String(s || '').trim();
+          if (!text) return;
+          items.push({ id: text, label: '场景 ' + (i + 1) + '：' + (text.length > 18 ? text.slice(0, 18) + '…' : text), desc: text });
+        });
+        return Promise.resolve(App.UI.sheet({
+          title: '这次在哪里开始？',
+          items: items,
+          cancelText: '取消',
+          selected: ''
+        })).then(function (picked) {
+          if (!picked) return null;
+          return String(picked.id || '');
+        });
+      }
+
+      function createSession(character, personas, providers, defProviderId, defPresetId, scene) {
         var provider = pickProvider(providers, defProviderId);
         var model = pickProviderModel(provider);
         var personaPromise = (personas && personas.length)
@@ -1009,6 +1141,7 @@
               unread: 0,
               isGenerating: false,
               greetingIndex: greeting.index,
+              scene: String(scene || ''),
               lastText: '',
               lastRole: '',
               lastAt: now,

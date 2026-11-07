@@ -437,7 +437,18 @@
       card.speechStyle = str(cFlat.speechStyle || cFlat.speech_style);
       card.catchphrases = str(cFlat.catchphrases || cFlat.catch_phrases || cFlat.catchphrase);
       card.scenario = str(cFlat.scenario);
+      var scList = arr(cFlat.scenarios || cFlat.scenes || data.scenarios);
+      scList = scList.map(str).filter(Boolean).slice(0, 6);
+      if (!scList.length && card.scenario) scList = [card.scenario];
+      card.scenarios = scList;
+      if (!card.scenario && scList.length) card.scenario = scList[0];
       card.firstMessage = firstMessage;
+      var gRaw = str(data.gender || cFlat.gender || cFlat.sex).toLowerCase();
+      if (gRaw === 'female' || gRaw === '女' || gRaw === '女性' || gRaw === 'f') card.gender = 'female';
+      else if (gRaw === 'male' || gRaw === '男' || gRaw === '男性' || gRaw === 'm') card.gender = 'male';
+      else if (gRaw === 'other' || gRaw === '其他' || gRaw === '其他/不设定') card.gender = 'other';
+      var greetings = arr(cFlat.alternateGreetings || cFlat.alternate_greetings || data.alternateGreetings || data.alternate_greetings);
+      if (greetings.length) card.alternateGreetings = greetings.map(str).filter(Boolean).slice(0, 10);
       card.exampleDialogues = normDialogues(cFlat.exampleDialogues || cFlat.example_dialogues || cFlat.dialogues);
       if (!card.personality && !card.background && !card.scenario && !card.firstMessage) {
         return {
@@ -968,6 +979,101 @@
    * 世界观补全。
    * @param {Object} opts {name, rawInput, provider, model, timeoutMs, onAttempt}
    */
+  /**
+   * 从 .md / .prompt / 聊天记录导入人格：把文本整理成角色卡（非流式）。
+   * @param {Object} opts {text, filename, provider, model, timeoutMs, onAttempt}
+   */
+  P.importPersona = function (opts) {
+    opts = opts || {};
+    var filename = String(opts.filename || '导入文本');
+    var text = String(opts.text || '').trim();
+    var system = [
+      '你是角色人格整理助手。用户会给你一段文本：可能是角色的 .md / .prompt 设定文件，也可能是两个人（用户与角色）的聊天记录导出。',
+      '请你从中提炼出「角色」的人格，输出一个严格的 JSON 对象（不要代码围栏、不要解释、不要多余文字）：',
+      '{',
+      '  "name": "角色的名字或称呼",',
+      '  "gender": "female|male|other|",',
+      '  "personality": "性格，一句话到一小段",',
+      '  "habits": "习惯/口头禅/小动作，可空",',
+      '  "background": "背景故事，可空",',
+      '  "speechStyle": "说话风格（句长、语气、用词），可空",',
+      '  "catchphrases": "常用口头禅，可空",',
+      '  "scenario": "初次见面的场景，可空",',
+      '  "firstMessage": "角色对用户说的第一句话（有聊天记录时可从 TA 说过的话里挑一句）",',
+      '  "alternateGreetings": ["可选的另一种开场白（0~3 条）"],',
+      '  "exampleDialogues": [{"user":"用户说的话","assistant":"角色说的话"}]',
+      '}',
+      '规则：全部使用简体中文；文本没提到的字段留空字符串/空数组；不要编造与文本冲突的身份；如果是聊天记录，从「对方」（不是用户自己）的消息里提炼名字、性格和说话方式；如果是第三人称设定（如「她是一名…」），把设定转写为角色人格。'
+    ].join('\n');
+    var user = '文件名：' + filename + '\n\n文本内容：\n' + text;
+    return runWithRetry({
+      prompt: { system: system, user: user },
+      ctx: { type: 'companion', draft: {} },
+      parse: P.parseCharacter,
+      provider: opts.provider,
+      model: opts.model,
+      maxTokens: opts.maxTokens || 1800,
+      timeoutMs: opts.timeoutMs || TIMEOUT_MS,
+      onAttempt: opts.onAttempt
+    });
+  };
+
+  /** 从聊天截图识别人格（需要支持图片输入的模型） */
+  P.importPersonaFromImage = function (opts) {
+    opts = opts || {};
+    var dataUris = Array.isArray(opts.dataUris) ? opts.dataUris.filter(function (u) { return /^data:image\//.test(String(u || '')); }) : [];
+    var dataUri = String(opts.dataUri || '');
+    if (!dataUris.length && /^data:image\//.test(dataUri)) dataUris = [dataUri];
+    if (!dataUris.length) {
+      return Promise.resolve({ ok: false, card: null, raw: '', error: { code: 'badfile', message: '不是有效的图片' } });
+    }
+    var many = dataUris.length > 1;
+    var prompt = [
+      many
+        ? '你会收到 ' + dataUris.length + ' 张图片：它们是同一张长截图（聊天记录）按从上到下的顺序切分出来的。'
+        : '你会收到一张聊天记录截图（可能是用户和某个角色的对话，也可能是角色设定截图）。',
+      many
+        ? '请把它们按顺序拼起来一起阅读，从聊天记录里识别出「角色」的人格，输出一个严格的 JSON 对象（不要代码围栏、不要解释）：'
+        : '请从截图里识别出「角色」的人格，输出一个严格的 JSON 对象（不要代码围栏、不要解释）：',
+      '{',
+      '  "name": "角色的名字或称呼",',
+      '  "gender": "female|male|other|",',
+      '  "personality": "性格",',
+      '  "habits": "习惯/口头禅/小动作",',
+      '  "background": "背景故事",',
+      '  "speechStyle": "说话风格",',
+      '  "catchphrases": "常用口头禅",',
+      '  "scenario": "初次见面的场景",',
+      '  "firstMessage": "角色对用户说的第一句话（可从截图里挑一句）",',
+      '  "alternateGreetings": ["另一种开场白（0~3 条）"],',
+      '  "exampleDialogues": [{"user":"用户说的话","assistant":"角色说的话"}]',
+      '}',
+      '规则：全部使用简体中文；截图里没有的信息留空字符串/空数组，不要编造；如果截图里只有设定没有对话，就按设定整理人格。'
+    ].join('\n');
+    var content = [{ type: 'text', text: prompt }];
+    for (var i = 0; i < dataUris.length; i++) {
+      if (many) content.push({ type: 'text', text: '（第 ' + (i + 1) + '/' + dataUris.length + ' 段，接上一段末尾继续）' });
+      content.push({ type: 'image_url', image_url: { url: dataUris[i] } });
+    }
+    var messages = [{ role: 'user', content: content }];
+    return App.API.chatOnce({
+      provider: opts.provider,
+      model: opts.model,
+      messages: messages,
+      params: { temperature: 0.4, max_tokens: 1800 },
+      timeoutMs: opts.timeoutMs || 90000
+    }).then(function (res) {
+      if (!res || !res.ok) {
+        return { ok: false, card: null, raw: (res && res.text) || '', error: (res && res.error) || { code: 'unknown', message: '识图失败' } };
+      }
+      var parsed = P.parseCharacter(res.text, { type: 'companion', draft: {} });
+      if (parsed.ok) return { ok: true, card: parsed.card, raw: res.text, error: null };
+      return { ok: false, card: null, raw: res.text, error: { code: 'parse', message: parsed.error || '返回格式不正确' } };
+    }).catch(function (err) {
+      return { ok: false, card: null, raw: '', error: (App.API && App.API.errorInfo) ? App.API.errorInfo(err) : { code: 'unknown', message: String(err && err.message || err) } };
+    });
+  };
+
   P.completeWorldview = function (opts) {
     opts = opts || {};
     var ctx = { name: opts.name || '', rawInput: opts.rawInput || '' };

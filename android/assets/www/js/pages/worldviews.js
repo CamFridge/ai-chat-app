@@ -346,7 +346,71 @@
       ));
     });
     box.appendChild(list);
+
+    // 世界书（v1.4.0）：按这个世界观，为某个角色生成触发式设定条目
+    var loreActions = UI.el('div', { class: 'lorebook-detail-actions' });
+    var loreBtn = UI.el('button', {
+      class: 'btn outline small',
+      attrs: { type: 'button', text: '生成世界书条目' }
+    });
+    loreBtn.addEventListener('click', function () {
+      if (UI.closeTopOverlay) UI.closeTopOverlay();
+      genLorebookFor(wv);
+    });
+    loreActions.appendChild(loreBtn);
+    box.appendChild(loreActions);
+
     return box;
+  }
+
+  // 生成世界书条目：挑一个角色（优先使用该世界观的角色）→ 进入 AI 生成页
+  function genLorebookFor(wv) {
+    if (!App.Lorebook) {
+      UI.toast('世界书模块未加载', 'error');
+      return Promise.resolve(null);
+    }
+    var wvId = wv && wv.id ? wv.id : '';
+    return DB.all('characters').then(function (list) {
+      var chars = (Array.isArray(list) ? list : []).filter(function (ch) { return ch && ch.id; });
+      var bound = chars.filter(function (ch) { return wvId && ch.worldviewId === wvId; });
+      var pool = bound.length ? bound : chars;
+      if (!pool.length) {
+        UI.toast('还没有角色，先创建一个角色再生成世界书条目');
+        return null;
+      }
+      if (pool.length === 1) return pushLorebookGen(pool[0], wvId);
+      var items = pool.map(function (ch) {
+        return {
+          id: ch.id,
+          label: ch.name || '未命名角色',
+          desc: bound.length ? '正在使用这个世界观' : '还没有绑定这个世界观，仍可按它的设定生成',
+          icon: 'character'
+        };
+      });
+      return UI.sheet({ title: '给哪个角色生成条目？', items: items }).then(function (item) {
+        if (!item) return null;
+        var picked = null;
+        for (var i = 0; i < pool.length; i++) {
+          if (pool[i].id === item.id) { picked = pool[i]; break; }
+        }
+        return picked ? pushLorebookGen(picked, wvId) : null;
+      });
+    }).catch(function (err) {
+      console.error('[worldviews] 打开世界书生成失败', err);
+      UI.toast('打不开生成页：' + ((err && err.message) || '未知错误'), 'error');
+      return null;
+    });
+  }
+
+  function pushLorebookGen(ch, wvId) {
+    try {
+      var params = { characterId: ch.id };
+      if (wvId) params.worldviewId = wvId;
+      return App.Router.push('lorebookGen', params);
+    } catch (e) {
+      UI.toast('打不开生成页：' + ((e && e.message) || '未知错误'), 'error');
+      return null;
+    }
   }
 
   function openBuiltin(wv) {

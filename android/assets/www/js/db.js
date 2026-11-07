@@ -7,8 +7,9 @@
   var DB = App.DB = {};
 
   var DB_NAME = 'aichat';
-  var DB_VERSION = 3;
-  var STORES = ['providers', 'worldviews', 'characters', 'personas', 'presets', 'sessions', 'messages', 'helpSessions', 'helpMessages', 'characterImages', 'saves', 'settings'];
+  var DB_VERSION = 4;
+  var STORES = ['providers', 'worldviews', 'characters', 'personas', 'presets', 'sessions', 'messages', 'helpSessions', 'helpMessages', 'characterImages', 'saves', 'settings',
+    'lorebooks', 'loreEntries', 'groups'];
   var INDEXES = [
     { store: 'messages', name: 'sessionId', keyPath: 'sessionId' },
     { store: 'helpMessages', name: 'sessionId', keyPath: 'sessionId' },
@@ -16,7 +17,9 @@
     { store: 'providers', name: 'role', keyPath: 'role' },
     { store: 'characterImages', name: 'characterId', keyPath: 'characterId' },
     { store: 'saves', name: 'sessionId', keyPath: 'sessionId' },
-    { store: 'saves', name: 'characterId', keyPath: 'characterId' }
+    { store: 'saves', name: 'characterId', keyPath: 'characterId' },
+    { store: 'lorebooks', name: 'characterId', keyPath: 'characterId' },
+    { store: 'loreEntries', name: 'lorebookId', keyPath: 'lorebookId' }
   ];
 
   var _db = null;
@@ -65,6 +68,8 @@
               os.createIndex('sessionId', 'sessionId', { unique: false });
               os.createIndex('characterId', 'characterId', { unique: false });
             }
+            if (name === 'lorebooks') os.createIndex('characterId', 'characterId', { unique: false });
+            if (name === 'loreEntries') os.createIndex('lorebookId', 'lorebookId', { unique: false });
           } else if (oldV < DB_VERSION) {
             var existing = req.transaction.objectStore(name);
             INDEXES.filter(function (ix) { return ix.store === name; }).forEach(function (ix) {

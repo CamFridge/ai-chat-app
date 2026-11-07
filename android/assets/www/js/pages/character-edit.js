@@ -35,13 +35,32 @@
     imgGridBox: null,  // 弹窗内网格容器（新增/删除后局部刷新）
     imgCountEl: null,  // 弹窗内数量文案
     godMode: false,    // 上帝模式（characters.godMode）
+    scenarios: [],     // 场景（characters.scenarios，0~6 条）
     greetModal: null,  // 问候语弹窗句柄（首选 + 备选）
     destroyed: false,
     busy: false,
     loaded: false
   };
 
-  var COMPANION_KEYS = ['personality', 'habits', 'background', 'speechStyle', 'catchphrases', 'scenario'];
+  var COMPANION_KEYS = ['personality', 'habits', 'background', 'speechStyle', 'catchphrases'];
+  var MAX_SCENES = 6;
+  var MAX_SCENE_LEN = 200;
+
+  function normalizeScenarios(list) {
+    if (!Array.isArray(list)) return [];
+    var out = [];
+    list.forEach(function (s) {
+      var t = String(s == null ? '' : s).trim();
+      if (!t) return;
+      if (t.length > MAX_SCENE_LEN) t = t.slice(0, MAX_SCENE_LEN);
+      out.push(t);
+    });
+    return out.slice(0, MAX_SCENES);
+  }
+  function syncScenarios() {
+    state.card.scenarios = normalizeScenarios(state.scenarios);
+    state.card.scenario = state.card.scenarios[0] || '';
+  }
   var ASSISTANT_KEYS = ['domain', 'specialty', 'duties', 'answerStyle', 'knowledgeBoundary', 'refusalPolicy'];
 
   /* 角色图片库弹窗的共享状态：
@@ -124,8 +143,14 @@
     // 世界观
     list.appendChild(worldviewRow());
 
+    // 世界书（v1.4.0）：触发式设定条目
+    list.appendChild(lorebookRow());
+
     // 角色图片库（聊天时 TA 可以主动发图）
     list.appendChild(imageRow());
+
+    // 场景（可多条，可为空）
+    list.appendChild(scenesRow());
 
     // 上帝模式（单个角色开关）
     list.appendChild(godModeRow());
@@ -259,6 +284,29 @@
     return cell;
   }
 
+  // 世界书（v1.4.0）：这个角色的触发式设定条目
+  function lorebookRow() {
+    var cell = UI.el('div', { class: 'cell ck-field', attrs: { role: 'button', tabindex: '0' } },
+      UI.el('div', { class: 'main' },
+        UI.el('div', { class: 'ck-field-label' },
+          UI.el('span', { class: 'ck-field-title', text: '世界书' })
+        ),
+        UI.el('div', { class: 'ck-field-value', text: '触发式设定条目 · 提到关键词时自动补充背景' })
+      ),
+      UI.el('span', { class: 'chev', html: UI.icon('chev', 17) })
+    );
+    cell.addEventListener('click', function () {
+      if (!state.id) { UI.toast('先保存角色，再打开世界书'); return; }
+      if (!App.Lorebook) { UI.toast('世界书模块未加载', 'error'); return; }
+      try {
+        App.Router.push('lorebook', { characterId: state.id });
+      } catch (e) {
+        UI.toast('打不开世界书：' + (e && e.message ? e.message : '未知错误'), 'error');
+      }
+    });
+    return cell;
+  }
+
   /* ------------------------------------------------------------
    * 角色图片库
    * ---------------------------------------------------------- */
@@ -282,6 +330,93 @@
   }
 
   // 上帝模式：单个角色独立开关（全局开关在设置页，聊天侧取二者或值）
+  function scenesRow() {
+    var list = normalizeScenarios(state.scenarios);
+    var text = list.length ? (list.length + ' 条 · 可留空') : '未设置（由上下文自由判断）';
+    var cell = UI.el('div', {
+      class: 'cell ck-field',
+      attrs: { role: 'button', tabindex: '0', 'data-guide-focus': 'characterScenarios' }
+    },
+      UI.el('div', { class: 'main' },
+        UI.el('div', { class: 'ck-field-label' },
+          UI.el('span', { class: 'ck-field-title', text: '场景（可多条）' })
+        ),
+        UI.el('div', { class: 'ck-field-value' + (list.length ? '' : ' ck-empty'), text: text })
+      ),
+      UI.el('span', { class: 'chev', html: UI.icon('chev', 17) })
+    );
+    cell.addEventListener('click', openScenesModal);
+    return cell;
+  }
+
+  function openScenesModal() {
+    var draft = normalizeScenarios(state.scenarios);
+    var modal;
+    var box = UI.el('div', { class: 'ck-scene-modal' });
+    box.appendChild(UI.el('div', {
+      class: 'hint',
+      text: '最多 ' + MAX_SCENES + ' 条。聊天开始时可挑一个场景；全部留空则由角色结合上下文自由判断。'
+    }));
+    var listBox = UI.el('div', { class: 'ck-scene-list' });
+    function renderRows() {
+      UI.clear(listBox);
+      draft.forEach(function (text, i) {
+        var row = UI.el('div', { class: 'ck-scene-row' });
+        var ta = UI.el('textarea', {
+          class: 'textarea',
+          attrs: { rows: 2, placeholder: '例如：雨夜的旧书店，只开了柜台一盏灯' }
+        });
+        ta.value = text || '';
+        ta.addEventListener('input', function () { draft[i] = ta.value; });
+        var del = UI.el('button', {
+          class: 'icon-btn ck-scene-del',
+          type: 'button',
+          attrs: { 'aria-label': '删除这个场景' },
+          html: UI.icon('close', 16)
+        });
+        del.addEventListener('click', function () { draft.splice(i, 1); renderRows(); });
+        row.appendChild(ta);
+        row.appendChild(del);
+        listBox.appendChild(row);
+      });
+      if (!draft.length) {
+        listBox.appendChild(UI.el('div', { class: 'ck-scene-empty', text: '还没有场景。留空也可以，角色会根据上下文判断。' }));
+      }
+    }
+    renderRows();
+    box.appendChild(listBox);
+    var add = UI.el('button', { class: 'btn ghost small ck-scene-add', type: 'button', text: '＋ 添加场景' });
+    add.addEventListener('click', function () {
+      if (draft.length >= MAX_SCENES) { UI.toast('最多保存 ' + MAX_SCENES + ' 个场景'); return; }
+      draft.push('');
+      renderRows();
+    });
+    box.appendChild(add);
+    box.appendChild(UI.el('div', { class: 'ck-scene-count', text: '最多 ' + MAX_SCENES + ' 条，每条不超过 ' + MAX_SCENE_LEN + ' 字' }));
+
+    modal = UI.modal({
+      title: '场景',
+      content: box,
+      dismissible: true,
+      actions: [
+        { text: '取消' },
+        {
+          text: '保存', class: 'primary',
+          onClick: function (close) {
+            state.scenarios = normalizeScenarios(draft);
+            syncScenarios();
+            if (!state.card.fieldOrigin) state.card.fieldOrigin = {};
+            state.card.fieldOrigin.scenarios = 'user';
+            close();
+            render();
+            UI.toast('场景已更新，记得保存角色', 'ok');
+          }
+        }
+      ]
+    });
+    return modal;
+  }
+
   function godModeRow() {
     var on = !!state.godMode;
     var sw = UI.el('span', {
@@ -530,7 +665,7 @@
     var added = false;
     var count = 0;
 
-    Promise.resolve(M.pickImage())
+    Promise.resolve(M.pickImage({ maxSide: 1024, quality: 88 }))
       .then(function (att) {
         if (!att) return null; // 用户取消：保持弹窗
         return Promise.resolve(M.addImage(id, att, { source: 'user', caption: '' })).then(function (rec) {
@@ -894,6 +1029,7 @@
     var filled = { name: !!state.card.name, type: true };
     filled.gender = !!normalizeGender(state.card.gender);
     filled.godMode = !!state.godMode;
+    filled.scenarios = normalizeScenarios(state.scenarios).length;
     filled.characterImages = (state.images || []).length > 0;
     filled.greetings = !!(String(state.card.firstMessage || '').trim() || altGreetingsOf(state.card).length);
     var missing = [];
@@ -1164,6 +1300,7 @@
     }
     card.gender = normalizeGender(card.gender);
     card.godMode = !!state.godMode;
+    syncScenarios();
     card.updatedAt = now;
     if (!card.createdAt) card.createdAt = now;
 
@@ -1264,6 +1401,11 @@
         if (!Array.isArray(state.card.duties)) state.card.duties = [];
         if (!Array.isArray(state.card.exampleDialogues)) state.card.exampleDialogues = [];
         state.godMode = !!state.card.godMode;
+        state.scenarios = normalizeScenarios(state.card.scenarios && state.card.scenarios.length
+          ? state.card.scenarios
+          : (state.card.scenario ? [state.card.scenario] : []));
+        state.card.scenarios = state.scenarios.slice();
+        state.card.scenario = state.scenarios[0] || '';
         state.loaded = true;
 
         page.setTitle('编辑角色');

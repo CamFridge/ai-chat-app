@@ -4,7 +4,8 @@
  *   1. 顶部「陪聊 / 助手」分段切换；
  *   2. 搜索、统计、空态引导；
  *   3. 列表行：头像 + 名称 + 一句话 + 世界观小标，点击开始聊天；
- *   4. 长按 / 「…」菜单：编辑、复制、删除（解绑会话但不删会话）、开始聊天；
+ *   4. 长按 / 「…」菜单：编辑、复制、删除（解绑会话但不删会话）、开始聊天、
+ *      导入 / 导出角色卡（SillyTavern V2，见 js/tavern.js）；
  *   5. 右上角：世界观库入口 + 新建角色。
  *
  * 注意：Tab 页的 build 只会执行一次（Router 永久缓存），
@@ -288,6 +289,8 @@
         { id: 'chat', label: '开始聊天', icon: 'chat' },
         { id: 'images', label: '图片库', desc: '管理 TA 的图片，聊天时可发给你' },
         { id: 'edit', label: '编辑角色', icon: 'edit' },
+        { id: 'import', label: '导入角色卡', desc: '从 SillyTavern / TavernAI V2 JSON 导入', icon: 'upload' },
+        { id: 'export', label: '导出角色卡', desc: '导出为 SillyTavern V2 JSON', icon: 'download' },
         { id: 'copy', label: '复制角色', icon: 'copy' },
         { id: 'delete', label: '删除角色', icon: 'delete', danger: true }
       ]
@@ -296,6 +299,8 @@
       if (item.id === 'chat') return startChat(ch);
       if (item.id === 'images') return openImageLibrary(ch);
       if (item.id === 'edit') return editCharacter(ch);
+      if (item.id === 'import') return importCharacterCard();
+      if (item.id === 'export') return exportCharacterCard(ch);
       if (item.id === 'copy') return copyCharacter(ch);
       if (item.id === 'delete') return deleteCharacter(ch);
       return null;
@@ -304,6 +309,48 @@
       UI.toast('操作失败：' + ((err && err.message) || '未知错误'), 'error');
       return null;
     });
+  }
+
+  /* 导入角色卡（SillyTavern V2）：交给 App.Tavern 统一处理预览与落库 */
+  function importCharacterCard() {
+    if (!App.Tavern || typeof App.Tavern.openImport !== 'function') {
+      UI.toast('角色卡导入功能暂不可用，请重启 App 后再试', 'error');
+      return Promise.resolve(null);
+    }
+    try {
+      return Promise.resolve(App.Tavern.openImport()).catch(function (err) {
+        console.error('[characters] 导入角色卡失败', err);
+        UI.toast('导入角色卡失败：' + ((err && err.message) || '未知错误'), 'error');
+        return null;
+      });
+    } catch (err2) {
+      console.error('[characters] 导入角色卡异常', err2);
+      UI.toast('导入角色卡失败', 'error');
+      return Promise.resolve(null);
+    }
+  }
+
+  /* 导出当前角色为 SillyTavern V2 JSON（导出落磁盘由原生桥完成） */
+  function exportCharacterCard(ch) {
+    if (!ch || !ch.id) {
+      UI.toast('角色还没有保存，无法导出', 'error');
+      return Promise.resolve(null);
+    }
+    if (!App.Tavern || typeof App.Tavern.openExport !== 'function') {
+      UI.toast('角色卡导出功能暂不可用，请重启 App 后再试', 'error');
+      return Promise.resolve(null);
+    }
+    try {
+      return Promise.resolve(App.Tavern.openExport(ch)).catch(function (err) {
+        console.error('[characters] 导出角色卡失败', err);
+        UI.toast('导出角色卡失败：' + ((err && err.message) || '未知错误'), 'error');
+        return null;
+      });
+    } catch (err2) {
+      console.error('[characters] 导出角色卡异常', err2);
+      UI.toast('导出角色卡失败', 'error');
+      return Promise.resolve(null);
+    }
   }
 
   // 打开某个角色的图片库（复用 character-edit.js 暴露的 App.ImageLibrary）

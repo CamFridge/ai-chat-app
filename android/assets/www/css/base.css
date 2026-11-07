@@ -114,11 +114,18 @@ svg { display: block; }
 .hidden { display: none !important; }
 
 /* ------------------------------ 骨架布局 ------------------------------ */
+/* v1.4.3：改回「相对定位 + 百分比高度」骨架。
+   原因：v1.4.1 起用 position:fixed 钉视口，在 Android 9 / Chrome 70 一类老 WebView 上
+   会让 fixed 层内部的 overflow 裁剪失效——滚动区里的消息会画到顶栏、输入栏甚至彼此身上，
+   表现为「气泡重叠 / 页面错位 / 滚不动」。相对定位 + html/body 的 height:100% 链是老内核上
+   最稳的方案；--kb-inset 仍由 main.js 用 visualViewport 计算，键盘只「盖」不「resize」时
+   把外壳缩短，输入框就不会被键盘压住。 */
 .shell {
+  position: relative;
+  height: 100%;
+  height: calc(100% - var(--kb-inset, 0px));
   display: flex;
   flex-direction: column;
-  height: 100%;
-  height: 100dvh;
   overflow: hidden;
   background: var(--bg);
 }
@@ -183,21 +190,31 @@ svg { display: block; }
   position: relative;
   overflow: hidden;
   background: var(--bg);
+  touch-action: pan-y;
 }
 .page {
   position: absolute;
-  inset: 0;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
   display: flex;
   flex-direction: column;
+  overflow-x: hidden;
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
+  touch-action: pan-y;
+  overscroll-behavior: contain;
   background: var(--bg);
 }
 .page-scroll {
   flex: 1 1 auto;
   min-height: 0;
+  overflow-x: hidden;
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
+  touch-action: pan-y;
+  overscroll-behavior: contain;
   padding-bottom: 12px;
 }
 .tabbar {
@@ -240,7 +257,10 @@ svg { display: block; }
 /* 启动页 */
 .boot {
   position: absolute;
-  inset: 0;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
   background: var(--bg);
   display: flex;
   flex-direction: column;
@@ -391,6 +411,17 @@ svg { display: block; }
 }
 .btn-group { display: flex; gap: 10px; }
 .btn-group .btn { flex: 1; }
+
+/* v1.3.5 按钮自适应：统一等宽、允许缩、窄屏收 padding */
+.btn { box-sizing: border-box; max-width: 100%; line-height: 1.2; }
+.btn-group .btn, .modal-foot .btn, .page-actions .btn, .ck-wizard-foot .btn, .ob-btn {
+  flex: 1 1 0; min-width: 0;
+}
+@media (max-width: 359px) {
+  .btn { padding: 0 10px; font-size: 15px; }
+  .btn.small { padding: 0 8px; font-size: 13px; }
+  .composer-send { min-width: 52px; padding: 0 10px; }
+}
 
 /* ------------------------------ 表单 ------------------------------ */
 .form { background: var(--card); }
@@ -583,11 +614,22 @@ svg { display: block; }
 .error-box .error-actions { display: flex; gap: 8px; margin-top: 8px; }
 
 /* ------------------------------ 模态 / 抽屉 / Toast ------------------------------ */
-#overlay-root { position: fixed; inset: 0; pointer-events: none; z-index: 800; }
+#overlay-root {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  pointer-events: none;
+  z-index: 800;
+}
 #overlay-root > * { pointer-events: auto; }
 .overlay-mask {
   position: fixed;
-  inset: 0;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
   background: var(--mask);
   opacity: 0;
   transition: opacity .2s;
@@ -599,7 +641,10 @@ svg { display: block; }
 .sheet-wrap.show .sheet { transform: translateY(0); }
 .modal-wrap {
   position: fixed;
-  inset: 0;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -620,6 +665,8 @@ svg { display: block; }
 .modal.show { transform: scale(1); opacity: 1; }
 .modal-head { padding: 20px 20px 8px; text-align: center; font-size: 17px; font-weight: 600; }
 .modal-body { padding: 4px 20px 18px; font-size: 14px; color: var(--text-2); text-align: center; line-height: 1.6; max-height: 45vh; overflow-y: auto; }
+.modal-body:has(.media-preview) { max-height: 76vh; padding-left: 10px; padding-right: 10px; }
+.ck-text-import-input { min-height: 150px; text-align: left; line-height: 1.55; }
 .modal-body.left { text-align: left; }
 .modal-body .input, .modal-body .textarea {
   width: 100%;
@@ -669,7 +716,7 @@ svg { display: block; }
   position: relative;
 }
 .sheet-head .sheet-close { position: absolute; right: 6px; top: 6px; }
-.sheet-list { overflow-y: auto; flex: 1 1 auto; }
+.sheet-list { overflow-y: auto; flex: 1 1 auto; min-height: 0; }
 .sheet-item {
   display: flex;
   align-items: center;
@@ -733,6 +780,34 @@ svg { display: block; }
   display: flex;
   flex-direction: column;
   gap: 12px;
+}
+/* v1.4.3：消息/日期条一律不参与弹性压缩。
+   老内核（Android 9 / Chrome 70 WebView）在「高度受限的 flex 列 + overflow:auto」里
+   会按 flex-shrink 把每条消息压到比内容还矮，文字于是溢出到相邻消息上 —— 这就是用户
+   看到的「气泡互相重叠」。显式禁止收缩后行高只由内容决定，任何内核都不会压扁。
+   同样的坑也存在于页面级滚动容器 .page（表现为「整页错位」）以及各选择器列表。 */
+.page > *,
+.msg-list > *,
+.ck-picker-list > *,
+.char-picker-list > *,
+.chat-drawer-body > *,
+.help-msg-list > * {
+  flex-shrink: 0;
+}
+/* v1.4.3：Chrome 84 以前的 flex 容器不支持 gap（CSS.supports('gap') 因 grid 支持而返回
+   true，不能用来判断）。由 main.js 实测后给 <html> 加 .no-flex-gap，这里用外边距兜底。 */
+.no-flex-gap .msg-list > * + * {
+  margin-top: 12px;
+}
+.no-flex-gap .msg .msg-body > * + * {
+  margin-top: 4px;
+}
+.no-flex-gap .msg > .msg-body {
+  margin-left: 8px;
+}
+.no-flex-gap .msg.me > .msg-body {
+  margin-left: 0;
+  margin-right: 8px;
 }
 .msg {
   display: flex;
@@ -942,6 +1017,21 @@ html[data-theme="amoled"] .msg-bubble code.inline { background: rgba(255, 255, 2
 }
 
 /* ---------------- 图片预览（App.Media.preview 复用） ---------------- */
-.media-preview { display: flex; flex-direction: column; align-items: center; gap: 8px; }
-.media-preview-img { max-width: 100%; max-height: 62vh; object-fit: contain; border-radius: 10px; background: var(--card-2); }
+.media-preview { display: flex; flex-direction: column; align-items: center; gap: 8px; width: 100%; }
+.media-preview-scroll {
+  width: 100%;
+  max-height: 64vh;
+  overflow: auto;
+  -webkit-overflow-scrolling: touch;
+  border-radius: 10px;
+  background: var(--card-2);
+}
+.media-preview-img {
+  display: block;
+  width: 100%;
+  height: auto;
+  max-width: none;
+  max-height: none;
+  border-radius: 10px;
+}
 .media-preview-name { font-size: 12px; color: var(--text-3); word-break: break-all; text-align: center; }

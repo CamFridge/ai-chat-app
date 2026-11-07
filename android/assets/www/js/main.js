@@ -102,9 +102,35 @@
   }
 
   /* ---------------- 启动流程 ---------------- */
+  /* v1.4.3：真实测量 flex 容器是否支持 gap。
+     CSS.supports('gap','1px') 在 Chrome 84 以前也会返回 true（因为 grid 支持 gap），
+     不能用来判断 flex 间距是否生效；这里用两个 1px 子元素实测间距。 */
+  function probeFlexGap() {
+    try {
+      var box = document.createElement('div');
+      box.style.cssText = 'position:absolute;left:-9999px;top:0;width:1px;display:flex;' +
+        'flex-direction:column;row-gap:7px;';
+      var a = document.createElement('div');
+      var b = document.createElement('div');
+      a.style.cssText = 'height:1px;width:1px;flex:0 0 auto;';
+      b.style.cssText = 'height:1px;width:1px;flex:0 0 auto;';
+      box.appendChild(a);
+      box.appendChild(b);
+      (document.body || document.documentElement).appendChild(box);
+      var ok = (b.offsetTop - a.offsetTop) >= 7;
+      if (box.parentNode) box.parentNode.removeChild(box);
+      if (!ok) {
+        var root = document.documentElement;
+        root.className = (root.className ? root.className + ' ' : '') + 'no-flex-gap';
+      }
+    } catch (e) { /* 忽略 */ }
+  }
+
   function start() {
+    probeFlexGap();
     App.Router.init();
     syncStatusBar();
+    try { initViewportSync(); } catch (e) { /* 忽略 */ }
 
     var ready = App.UI.applyStoredTheme()
       .catch(function () { return App.UI.theme(); })
@@ -168,6 +194,36 @@
         App.Proactive.init().catch(function (e) { console.error('[main] 主动消息初始化失败', e); });
       } catch (e) { console.error('[main] 主动消息初始化失败', e); }
     }
+  }
+
+  /* ---------------- 键盘/视口自适应（v1.4.2） ----------------
+     个别 Android WebView 在 adjustResize 下不会缩短 layout viewport，键盘只是盖在页面上，
+     导致底部输入框与消息气泡互相压住（时有时无）。用 visualViewport 算出键盘高度写进
+     --kb-inset，让 .shell 相应收缩，避免「聊天框重叠」。 */
+  function initViewportSync() {
+    var root = document.documentElement;
+    var vv = window.visualViewport;
+    var lastKb = -1;
+    function apply() {
+      var kb = 0;
+      try {
+        if (vv) kb = Math.max(0, Math.round(window.innerHeight - (vv.height + vv.offsetTop)));
+      } catch (e) { kb = 0; }
+      if (!(kb >= 0)) kb = 0;
+      if (kb === lastKb) return;
+      lastKb = kb;
+      try { root.style.setProperty('--kb-inset', kb + 'px'); } catch (e) { /* 忽略 */ }
+      if (kb > 0) {
+        try { window.dispatchEvent(new Event('kb-open')); } catch (e) { /* 忽略 */ }
+      }
+    }
+    window.addEventListener('resize', apply);
+    window.addEventListener('orientationchange', apply);
+    if (vv) {
+      vv.addEventListener('resize', apply);
+      vv.addEventListener('scroll', apply);
+    }
+    apply();
   }
 
   function renderFatal(err) {

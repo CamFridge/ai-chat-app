@@ -156,9 +156,12 @@ public class Bridge {
                 deliverOk(id);
                 return;
             }
-            case "ui.pickImage":
-                activity.pickImage(id);
+            case "ui.pickImage": {
+                boolean slice = args.optBoolean("slice", false);
+                int target = slice ? args.optInt("maxWidth", 1200) : args.optInt("maxSide", 1024);
+                activity.pickImage(id, target, args.optInt("quality", 88), slice);
                 return;
+            }
 
             /* ---- 文件 ---- */
             case "file.import":

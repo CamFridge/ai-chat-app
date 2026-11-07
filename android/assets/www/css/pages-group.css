@@ -1,0 +1,399 @@
+/* pages-group.css —— v1.4.0 群聊相关样式（只使用 .group-* 前缀，避免影响其它页面）
+ * 覆盖：聊天列表群头像叠放 / 群聊标签 / 新建群聊页 / 群成员管理页 / 添加成员选择器
+ */
+
+/* ============================================================
+ * 1. 聊天列表：群头像叠放 + 群聊标签
+ * ============================================================ */
+.group-avatar {
+  position: relative;
+  border-radius: 10px;
+  overflow: hidden;
+  background: linear-gradient(145deg, #f0a35e, #d8813b);
+}
+
+/* 内部成员小头像：绝对定位铺在叠放容器里 */
+.group-avatar > .avatar {
+  position: absolute;
+  border-radius: 50%;
+  box-shadow: 0 0 0 1px var(--card);
+  font-size: 9px;
+  line-height: 1;
+}
+
+/* 1 位成员：铺满 */
+.group-avatar.n1 > .avatar {
+  left: 0;
+  top: 0;
+  width: 100%;
+  height: 100%;
+  font-size: 16px;
+}
+
+/* 2 位成员：左上 / 右下对角 */
+.group-avatar.n2 > .avatar {
+  width: 54%;
+  height: 54%;
+}
+.group-avatar.n2 > .avatar:nth-child(1) {
+  left: 2%;
+  top: 2%;
+}
+.group-avatar.n2 > .avatar:nth-child(2) {
+  right: 2%;
+  bottom: 2%;
+}
+
+/* 3 位成员：上左 / 上右 / 下中 */
+.group-avatar.n3 > .avatar {
+  width: 48%;
+  height: 48%;
+}
+.group-avatar.n3 > .avatar:nth-child(1) {
+  left: 2%;
+  top: 2%;
+}
+.group-avatar.n3 > .avatar:nth-child(2) {
+  right: 2%;
+  top: 2%;
+}
+.group-avatar.n3 > .avatar:nth-child(3) {
+  left: 26%;
+  bottom: 2%;
+}
+
+/* 4 位成员：四宫格 */
+.group-avatar.n4 > .avatar {
+  width: 48%;
+  height: 48%;
+}
+.group-avatar.n4 > .avatar:nth-child(1) {
+  left: 2%;
+  top: 2%;
+}
+.group-avatar.n4 > .avatar:nth-child(2) {
+  right: 2%;
+  top: 2%;
+}
+.group-avatar.n4 > .avatar:nth-child(3) {
+  left: 2%;
+  bottom: 2%;
+}
+.group-avatar.n4 > .avatar:nth-child(4) {
+  right: 2%;
+  bottom: 2%;
+}
+
+/* 兜底：成员头像都取不到时显示 👥（元素同时带 .avatar.group） */
+.group-avatar.avatar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+}
+
+/* 会话行里的「群聊」小标签（与 .type-tag 组合使用） */
+.group-tag {
+  color: #d8813b;
+  background: rgba(240, 163, 94, .18);
+}
+
+/* ============================================================
+ * 2. 新建群聊页 / 群成员管理页 公共骨架
+ * ============================================================ */
+.group-create-scroll,
+.group-manage-scroll {
+  padding-bottom: 12px;
+}
+
+.group-status {
+  padding: 40px 16px;
+  display: flex;
+  justify-content: center;
+}
+
+/* 群名输入区 */
+.group-form,
+.group-manage-form {
+  margin-bottom: 4px;
+}
+
+.group-name-field .input {
+  width: 100%;
+}
+
+.group-name-hint {
+  line-height: 1.45;
+}
+
+/* 分区（选择成员 / 群成员 / 危险操作） */
+.group-section {
+  margin-top: 10px;
+  background: var(--card);
+}
+
+.group-section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 14px 14px 8px;
+}
+
+.group-section-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.group-count {
+  flex: 0 0 auto;
+  font-size: 12px;
+  color: var(--text-2);
+}
+
+.group-count-warn {
+  color: var(--warn);
+}
+
+/* 搜索框（复用 .search-bar 外壳） */
+.group-member-search-bar,
+.group-picker-search-bar {
+  margin: 0 14px 8px;
+}
+
+.group-member-search,
+.group-picker-search {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  font-size: 14px;
+  color: var(--text);
+  padding: 8px 0;
+}
+
+.group-member-search::placeholder,
+.group-picker-search::placeholder {
+  color: var(--text-3);
+}
+
+/* ============================================================
+ * 3. 成员列表（新建页 / 管理页共用）
+ * ============================================================ */
+.group-member-list {
+  background: var(--card);
+}
+
+.group-member-item {
+  align-items: center;
+  gap: 12px;
+  min-height: 64px;
+  padding: 10px 14px;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.group-member-item:active {
+  background: var(--card-2);
+}
+
+.group-member-item.selected {
+  background: var(--brand-weak);
+}
+
+.group-member-name {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  font-size: 15.5px;
+  font-weight: 500;
+  color: var(--text);
+}
+
+.group-member-name > .ellipsis {
+  min-width: 0;
+}
+
+.group-type-tag {
+  flex: 0 0 auto;
+  font-size: 10px;
+}
+
+.group-member-desc {
+  font-size: 12.5px;
+  color: var(--text-2);
+  line-height: 1.4;
+}
+
+.group-member-check {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+}
+
+/* 勾选圈 */
+.group-check {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 1.5px solid var(--line-strong);
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  background: transparent;
+  transition: background .15s ease, border-color .15s ease;
+}
+
+.group-check.on {
+  background: var(--brand);
+  border-color: var(--brand);
+}
+
+.group-check svg {
+  width: 14px;
+  height: 14px;
+  display: block;
+}
+
+.group-member-none {
+  padding: 22px 14px;
+  text-align: center;
+  font-size: 13px;
+  color: var(--text-3);
+}
+
+.group-member-tip {
+  padding: 8px 14px 4px;
+  font-size: 12px;
+  color: var(--text-3);
+  line-height: 1.45;
+}
+
+/* 添加 / 移除按钮 */
+.group-add-btn {
+  flex: 0 0 auto;
+}
+
+.group-remove-btn {
+  flex: 0 0 auto;
+  color: var(--danger);
+  border-color: rgba(250, 81, 81, .35);
+}
+
+.group-remove-btn[disabled] {
+  color: var(--text-3);
+  border-color: var(--line);
+  opacity: .6;
+}
+
+/* ============================================================
+ * 4. 危险操作区（解散群聊）
+ * ============================================================ */
+.group-danger-zone {
+  margin: 16px 14px 8px;
+  padding: 14px;
+  border-radius: var(--radius);
+  background: var(--card);
+  border: .5px solid rgba(250, 81, 81, .25);
+}
+
+.group-danger-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--danger);
+}
+
+.group-danger-hint {
+  margin: 6px 0 12px;
+  font-size: 12px;
+  color: var(--text-2);
+  line-height: 1.5;
+}
+
+.group-dissolve-btn {
+  width: 100%;
+}
+
+/* 底部操作条 */
+.group-create-actions,
+.group-manage-actions {
+  padding: 10px 14px 12px;
+  background: var(--bg);
+  border-top: .5px solid var(--line);
+}
+
+/* 有安全区时再抬高底部内边距（不支持 env() 的 WebView 会忽略这一条） */
+.group-create-actions,
+.group-manage-actions {
+  padding-bottom: calc(12px + env(safe-area-inset-bottom, 0px));
+}
+
+/* ============================================================
+ * 5. 添加群成员选择器（modal 内）
+ * ============================================================ */
+.group-picker {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.group-picker-list {
+  max-height: 46vh;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  border-radius: var(--radius-sm);
+  border: .5px solid var(--line);
+}
+
+.group-picker-item {
+  align-items: center;
+  gap: 10px;
+  min-height: 54px;
+  padding: 8px 12px;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.group-picker-item:active {
+  background: var(--card-2);
+}
+
+.group-picker-item.selected {
+  background: var(--brand-weak);
+}
+
+.group-picker-name {
+  font-size: 14.5px;
+  font-weight: 500;
+  color: var(--text);
+}
+
+.group-picker-desc {
+  font-size: 12px;
+  color: var(--text-2);
+}
+
+.group-picker-check {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+}
+
+.group-picker-none {
+  padding: 20px 12px;
+  text-align: center;
+  font-size: 13px;
+  color: var(--text-3);
+}
+
+.group-picker-hint {
+  margin-top: 8px;
+  font-size: 12px;
+  color: var(--text-3);
+  line-height: 1.45;
+}

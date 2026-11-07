@@ -178,6 +178,7 @@
 
 .ck-wizard-body {
   flex: 1;
+  min-height: 0;
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
   padding-bottom: 12px;
@@ -1446,4 +1447,52 @@
 
 @media (max-width: 360px) {
   .ck-gender-seg .seg { font-size: 13px; padding: 8px 4px; }
+}
+
+/* ---- v1.3.1 从文件 / 截图导入人格 ---- */
+.ck-import-box{margin:16px 0 4px;padding:14px;border-radius:12px;background:var(--card-2);}
+.ck-import-box .btn.block{margin-top:10px;width:100%;justify-content:center;gap:8px;}
+.ck-import-box .ck-step-desc{margin:0;}
+
+/* ===== v1.3.2 场景编辑 ===== */
+.ck-scene-field { margin-top: 14px; }
+.ck-scene-list { display: flex; flex-direction: column; gap: 8px; margin-top: 6px; }
+.ck-scene-row { display: flex; align-items: flex-start; gap: 8px; }
+.ck-scene-row .textarea { flex: 1; min-height: 56px; resize: vertical; }
+.ck-scene-del {
+  flex: 0 0 auto; width: 36px; height: 36px; margin-top: 2px; border-radius: 10px;
+  display: inline-flex; align-items: center; justify-content: center;
+  color: var(--text-3); background: var(--card-2);
+}
+.ck-scene-add { align-self: flex-start; margin-top: 8px; }
+.ck-scene-count { margin-top: 6px; font-size: 12px; color: var(--text-3); }
+
+.ck-scene-modal { display: flex; flex-direction: column; gap: 8px; }
+.ck-scene-empty { color: var(--text-3); font-size: 13px; padding: 8px 0; }
+
+/* ---- 人格导入：进度与错误反馈（v1.3.3） ---- */
+.ck-import-status {
+  margin-top: 8px;
+  font-size: 12.5px;
+  color: var(--brand);
+  font-variant-numeric: tabular-nums;
+}
+.ck-import-error {
+  margin-top: 10px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: rgba(250, 81, 81, 0.08);
+  border: 1px solid rgba(250, 81, 81, 0.28);
+}
+.ck-import-error-title {
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--danger, #fa5151);
+  margin-bottom: 4px;
+}
+.ck-import-error-text {
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--text-2);
+  white-space: normal;
 }

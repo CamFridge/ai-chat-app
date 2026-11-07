@@ -353,6 +353,10 @@
 
 /* ---------- 顶部信息条：角色名 · 类型 ｜ 当前模型 ---------- */
 .chat-topbar {
+  /* v1.4.3：信息条必须在滚动内容之上。老内核里滚动层可能把内容画到兄弟节点上，
+     显式 position+z-index 后消息再怎么滚动也压不到这一条。 */
+  position: relative;
+  z-index: 3;
   flex: 0 0 auto;
   display: flex;
   align-items: center;
@@ -459,6 +463,10 @@
 }
 /* 出错且没有任何内容时（占位气泡为空），不显示空气泡，只留错误条 */
 .chat-page .msg-bubble:empty {
+  display: none;
+}
+/* 同上：assistant 空气泡带 .md 容器子节点，:empty 不成立，用显式 class（v1.4.2） */
+.chat-page .msg-bubble.is-empty {
   display: none;
 }
 
@@ -673,7 +681,10 @@
 /* ---------- 角色信息抽屉（自绘，base.css 无 .drawer） ---------- */
 .chat-drawer-mask {
   position: fixed;
-  inset: 0;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
   z-index: 900;
   background: var(--mask);
   opacity: 0;
@@ -1197,6 +1208,51 @@ html[data-theme="amoled"] .chat-page .msg-bubble.attach-only {
 }
 
 /* 窄屏：附件卡片与图片缩到 180px，避免撑破气泡 */
+.chat-page .msg-img-box {
+  position: relative;
+  display: inline-block;
+  max-width: 100%;
+  margin-top: 4px;
+}
+.chat-page .msg-img-box .msg-attach-img { margin-top: 0; }
+.chat-page .msg-img-tag {
+  position: absolute;
+  left: 6px;
+  bottom: 6px;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, .55);
+  color: #fff;
+  font-size: 11px;
+  line-height: 1.35;
+  pointer-events: none;
+}
+.chat-page .msg-img-box.tall {
+  width: 220px;
+  max-width: 62vw;
+}
+.chat-page .msg-img-box.tall .msg-attach-img {
+  width: 100%;
+  max-width: 100%;
+  height: 300px;
+  max-height: 300px;
+  object-fit: cover;
+  object-position: top;
+}
+.chat-page .msg-image.tall {
+  width: 220px;
+  max-width: 62vw;
+}
+.chat-page .msg-image.tall .msg-image-img {
+  width: 100%;
+  max-width: 100%;
+  height: 320px;
+  max-height: 320px;
+  object-fit: cover;
+  object-position: top;
+}
+.chat-page .msg-image.tall { position: relative; }
+
 @media (max-width: 359px) {
   .chat-page .msg-attach-img,
   .chat-page .msg-image-img {
@@ -1300,7 +1356,10 @@ body.has-chat-bg .chat-page .chat-wrap { position: relative; }
 body.has-chat-bg .chat-page .chat-wrap::before {
   content: "";
   position: absolute;
-  inset: 0;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
   background: #ffffff;
   opacity: 0.18;
   pointer-events: none;
@@ -1360,4 +1419,56 @@ html[data-theme="amoled"] body.has-chat-bg .chat-page .composer-input-wrap {
   height: 100%;
   object-fit: cover;
   display: block;
+}
+
+/* ===== v1.3.2 聊天页场景条 ===== */
+.chat-scene-bar { position: relative; z-index: 2; padding: 4px 12px 6px; display: flex; }
+.chat-scene-bar.hidden { display: none; }
+.chat-scene-chip {
+  max-width: 100%; display: inline-flex; align-items: center; gap: 6px;
+  padding: 5px 10px; border-radius: 999px; border: 1px solid var(--line);
+  background: var(--card-2); color: var(--text-2); font-size: 12px;
+}
+.chat-scene-icon { width: 14px; height: 14px; display: inline-flex; color: var(--brand); }
+.chat-scene-text { max-width: 220px; }
+.chat-scene-chev { opacity: .5; display: inline-flex; }
+
+/* ===== v1.4.0 群聊发言人 / 文本模式（Lead） ===== */
+.msg-speaker {
+  font-size: 11.5px;
+  line-height: 1.4;
+  color: var(--text-3);
+  margin: 0 0 3px 4px;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.msg.ai .msg-bubble.text-mode {
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-size: 15px;
+  line-height: 1.72;
+}
+
+/* ---------- 头像可点更换 / 抽屉换头像按钮（v1.4.2） ---------- */
+.chat-page .msg-avatar.tap-edit { cursor: pointer; }
+.chat-page .msg-avatar.tap-edit:active { opacity: .72; }
+.chat-drawer-head .chat-drawer-avatarbtn {
+  margin-left: auto;
+  flex: 0 0 auto;
+  align-self: center;
+  padding: 5px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--card-2);
+  color: var(--text-2);
+  font-family: inherit;
+  font-size: 12px;
+  line-height: 1.3;
+  -webkit-tap-highlight-color: transparent;
+}
+.chat-drawer-head .chat-drawer-avatarbtn:active {
+  color: var(--brand);
+  border-color: var(--brand);
 }

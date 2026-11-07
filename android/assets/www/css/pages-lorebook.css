@@ -1,0 +1,684 @@
+/* ============================================================
+ * pages-lorebook.css —— 世界书（Lorebook）：条目列表 / 条目编辑 / AI 生成
+ * 只做本模块的增量样式，类名统一 .lorebook-* 前缀。
+ * 通用组件（.page / .page-scroll / .cell / .list / .btn / .card / .empty /
+ * .field / .switch / .badge / .tag / .loading / .error-box）复用 base.css。
+ * 所有颜色走主题变量，深浅色自动适配。
+ * ============================================================ */
+
+/* ---------------- 通用：页面骨架 / 说明文字 ---------------- */
+.lorebook-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  padding-bottom: 24px;
+}
+
+.lorebook-head {
+  padding: 14px 16px 2px;
+}
+
+.lorebook-head-title {
+  font-size: 17px;
+  font-weight: 600;
+  line-height: 1.4;
+  color: var(--text);
+  word-break: break-all;
+}
+
+.lorebook-head-sub {
+  margin-top: 3px;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text-2);
+}
+
+.lorebook-note {
+  padding: 8px 16px;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--text-3);
+}
+
+.lorebook-note.warn {
+  color: var(--warn);
+}
+
+.lorebook-note.error {
+  color: var(--danger);
+}
+
+.lorebook-block {
+  margin-top: 10px;
+}
+
+.lorebook-pad {
+  padding: 0 16px;
+}
+
+.lorebook-gap {
+  height: 10px;
+}
+
+.lorebook-inline-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 10px 16px;
+}
+
+.lorebook-loading-inline {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 20px 16px;
+  font-size: 13px;
+  color: var(--text-2);
+}
+
+/* ---------------- 列表页：顶部书本概览 ---------------- */
+.lorebook-overview {
+  margin: 10px 12px 0;
+  padding: 14px;
+  border-radius: var(--radius);
+  background: var(--card);
+  box-shadow: var(--shadow);
+}
+
+.lorebook-overview-top {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.lorebook-overview-main {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.lorebook-overview-name {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lorebook-overview-sub {
+  margin-top: 2px;
+  font-size: 12px;
+  color: var(--text-2);
+}
+
+.lorebook-stats {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: .5px solid var(--line);
+}
+
+.lorebook-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.lorebook-stat-num {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.lorebook-stat-label {
+  font-size: 11px;
+  color: var(--text-3);
+}
+
+.lorebook-stat-grow {
+  flex: 1 1 auto;
+}
+
+.lorebook-budget-btn {
+  flex: 0 0 auto;
+}
+
+/* ---------------- 列表页：条目行 ---------------- */
+.lorebook-entry {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 12px 14px;
+}
+
+/* base.css 的 `.list .cell`（特异性更高）会把行内元素垂直居中，这里显式覆盖 */
+.list .lorebook-entry {
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.lorebook-entry-main {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.lorebook-entry-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.lorebook-entry-name {
+  font-size: 15px;
+  font-weight: 500;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lorebook-entry-keys {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.lorebook-key {
+  max-width: 100%;
+  padding: 1px 7px;
+  border-radius: 9px;
+  font-size: 11px;
+  line-height: 1.6;
+  color: var(--brand);
+  background: var(--brand-weak);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lorebook-key.secondary {
+  color: var(--text-2);
+  background: var(--card-2);
+}
+
+.lorebook-key.more {
+  color: var(--text-3);
+  background: transparent;
+  padding-left: 0;
+}
+
+.lorebook-entry-body {
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--text-2);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.lorebook-entry-side {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+}
+
+.lorebook-prio {
+  font-size: 11px;
+  padding: 1px 6px;
+  border-radius: 8px;
+  color: var(--text-2);
+  background: var(--card-2);
+}
+
+.lorebook-prio.high {
+  color: var(--brand);
+  background: var(--brand-weak);
+}
+
+.lorebook-entry-off .lorebook-entry-name,
+.lorebook-entry-off .lorebook-entry-body,
+.lorebook-entry-off .lorebook-entry-keys {
+  opacity: .45;
+}
+
+/* 条目行右侧开关（避免整行点击与开关点击冲突） */
+.lorebook-entry .switch {
+  flex: 0 0 auto;
+  margin-top: 2px;
+}
+
+/* ---------------- 空态 / 错误态包装 ---------------- */
+.lorebook-empty-wrap {
+  padding: 18px 12px 8px;
+}
+
+.lorebook-error-wrap {
+  padding: 16px 14px;
+}
+
+/* ---------------- 编辑页 ---------------- */
+.lorebook-form {
+  padding: 10px 0 0;
+}
+
+.lorebook-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 12px 16px;
+  background: var(--card);
+}
+
+.lorebook-field + .lorebook-field {
+  border-top: .5px solid var(--line);
+}
+
+.lorebook-field-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.lorebook-field-label {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-2);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.lorebook-field-label .req {
+  color: var(--danger);
+}
+
+.lorebook-field-hint {
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text-3);
+}
+
+.lorebook-field.error .lorebook-input,
+.lorebook-field.error .lorebook-textarea {
+  border-color: var(--danger);
+}
+
+.lorebook-input,
+.lorebook-textarea {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 9px 10px;
+  border: .5px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  color: var(--text);
+  font-size: 15px;
+  font-family: inherit;
+  outline: none;
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+.lorebook-input:focus,
+.lorebook-textarea:focus {
+  border-color: var(--brand);
+}
+
+.lorebook-textarea {
+  min-height: 132px;
+  line-height: 1.55;
+  resize: none;
+}
+
+.lorebook-count {
+  align-self: flex-end;
+  font-size: 11px;
+  color: var(--text-3);
+}
+
+.lorebook-count.warn {
+  color: var(--warn);
+}
+
+.lorebook-count.error {
+  color: var(--danger);
+}
+
+/* 触发词 chips */
+.lorebook-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.lorebook-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 100%;
+  padding: 3px 8px;
+  border-radius: 12px;
+  font-size: 13px;
+  color: var(--brand);
+  background: var(--brand-weak);
+}
+
+.lorebook-chip-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lorebook-chip-x {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  color: var(--brand);
+  font-size: 13px;
+  line-height: 1;
+  opacity: .8;
+}
+
+.lorebook-chip-x:active {
+  background: rgba(127, 127, 127, .2);
+}
+
+.lorebook-chips-empty {
+  font-size: 12px;
+  color: var(--text-3);
+}
+
+.lorebook-input-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.lorebook-input-row .lorebook-input {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.lorebook-input-row .btn {
+  flex: 0 0 auto;
+}
+
+/* 开关行 */
+.lorebook-switch-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 16px;
+  background: var(--card);
+}
+
+.lorebook-switch-row + .lorebook-switch-row {
+  border-top: .5px solid var(--line);
+}
+
+.lorebook-switch-text {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.lorebook-switch-title {
+  font-size: 15px;
+  color: var(--text);
+}
+
+.lorebook-switch-desc {
+  margin-top: 2px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text-3);
+}
+
+.lorebook-section-title {
+  padding: 14px 16px 2px;
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: .02em;
+  color: var(--text-3);
+}
+
+/* 删除 */
+.lorebook-danger {
+  margin: 18px 12px 0;
+}
+
+.lorebook-danger .btn {
+  width: 100%;
+}
+
+/* ---------------- AI 生成页 ---------------- */
+.lorebook-gen-status {
+  margin: 12px 12px 0;
+  padding: 12px 14px;
+  border-radius: var(--radius);
+  background: var(--card);
+  box-shadow: var(--shadow);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.lorebook-gen-status-main {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.lorebook-gen-status-title {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text);
+}
+
+.lorebook-gen-status-desc {
+  margin-top: 2px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text-2);
+}
+
+.lorebook-gen-timer {
+  flex: 0 0 auto;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-2);
+}
+
+.lorebook-gen-spinner {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  color: var(--brand);
+}
+
+.lorebook-gen-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 14px 16px 4px;
+}
+
+.lorebook-gen-head-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.lorebook-gen-head-count {
+  font-size: 12px;
+  color: var(--text-2);
+}
+
+.lorebook-gen-list {
+  padding: 6px 12px 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.lorebook-gen-card {
+  padding: 12px;
+  border-radius: var(--radius);
+  background: var(--card);
+  box-shadow: var(--shadow);
+  border: 1px solid transparent;
+}
+
+.lorebook-gen-card.selected {
+  border-color: var(--brand);
+}
+
+.lorebook-gen-card-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.lorebook-gen-check {
+  flex: 0 0 auto;
+  width: 22px;
+  height: 22px;
+  margin-top: 1px;
+  border-radius: 50%;
+  border: 1.5px solid var(--line-strong);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: transparent;
+  background: transparent;
+}
+
+.lorebook-gen-check.on {
+  background: var(--brand);
+  border-color: var(--brand);
+  color: #fff;
+}
+
+.lorebook-gen-check svg {
+  width: 14px;
+  height: 14px;
+}
+
+.lorebook-gen-title-wrap {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.lorebook-gen-title {
+  font-size: 15px;
+  font-weight: 500;
+  color: var(--text);
+  word-break: break-all;
+}
+
+.lorebook-gen-meta {
+  margin-top: 3px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.lorebook-gen-keys {
+  margin-top: 8px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.lorebook-gen-body {
+  margin-top: 8px;
+}
+
+.lorebook-gen-textarea {
+  width: 100%;
+  box-sizing: border-box;
+  min-height: 96px;
+  padding: 9px 10px;
+  border: .5px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  color: var(--text);
+  font-size: 14px;
+  line-height: 1.55;
+  font-family: inherit;
+  outline: none;
+  resize: none;
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+.lorebook-gen-textarea:focus {
+  border-color: var(--brand);
+}
+
+.lorebook-gen-card-foot {
+  margin-top: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.lorebook-gen-card-count {
+  font-size: 11px;
+  color: var(--text-3);
+}
+
+.lorebook-gen-error {
+  margin: 12px 12px 0;
+}
+
+.lorebook-gen-foot {
+  margin-top: auto;
+}
+
+/* 生成中禁用输入，视觉上要能看出来 */
+.lorebook-gen-card.locked {
+  opacity: .6;
+}
+
+.lorebook-gen-card.locked .lorebook-gen-textarea {
+  pointer-events: none;
+}
+
+/* ---------------- 其他页面里的入口 ---------------- */
+/* pages/worldviews.js：世界观详情底部的「生成世界书条目」按钮 */
+.lorebook-detail-actions {
+  margin-top: 14px;
+  display: flex;
+}
+
+.lorebook-detail-actions .btn {
+  flex: 1;
+}
+
+/* 小屏适配 */
+@media (max-width: 340px) {
+  .lorebook-stats {
+    gap: 10px;
+  }
+  .lorebook-gen-timer {
+    display: none;
+  }
+}
